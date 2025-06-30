@@ -15,7 +15,7 @@ def get_arizona_time():
     return datetime.datetime.now(pytz.timezone('US/Arizona'))
 
 def get_yesterday():
-    return get_arizona_time() - datetime.timedelta(days=1)
+    return get_arizona_time()  # Changed from yesterday to today
 
 def format_date(dt):
     return f"{dt.month}.{dt.day}.{dt.year}"
@@ -212,15 +212,15 @@ def upload_financial_report(created_at_hour=None):
     try:
         print("Uploading Financial Report to custom_financials_2...")
         
-        yesterday = get_yesterday()
-        yesterday_file = format_date(yesterday)
+        today = get_yesterday()  # Function name kept for compatibility but now returns today
+        today_file = format_date(today)
         
         # Include hour in filename
         az_time = get_arizona_time()
         if not created_at_hour:
             created_at_hour = az_time.strftime("%I %p").lstrip('0')
             
-        filepath = os.path.join(os.getcwd(), "Financial Reports", f"{yesterday_file}_H{az_time.hour:02d}.csv")
+        filepath = os.path.join(os.getcwd(), "Financial Reports", f"{today_file}_H{az_time.hour:02d}.csv")
         
         headers, data = read_csv_data(filepath)
         if not headers:
@@ -242,10 +242,10 @@ def upload_financial_report(created_at_hour=None):
             success = upsert_data_with_created_at(conn, 'custom_financials_2', headers, data, key_columns)
             
             if success:
-                # Log the Created_At information
+                # Log the Created_At information - FIXED: use today instead of yesterday
                 cursor = conn.cursor()
                 cursor.execute("SELECT DISTINCT Created_At FROM [custom_financials_2] WHERE Report_Date = %s", 
-                             (yesterday.strftime("%m/%d/%Y"),))
+                             (today.strftime("%m/%d/%Y"),))  # FIXED: changed from yesterday to today
                 created_at_values = [row[0] for row in cursor.fetchall()]
                 print(f"Financial data uploaded with Created_At: {created_at_values}")
             
@@ -261,15 +261,15 @@ def upload_ro_reports(created_at_hour=None):
     try:
         print("Uploading RO Marketing Reports to ro_marketing_2...")
         
-        yesterday = get_yesterday()
-        yesterday_short = format_date_short(yesterday)
+        today = get_yesterday()  # Function name kept for compatibility but now returns today
+        today_short = format_date_short(today)
         
         # Include hour in filename
         az_time = get_arizona_time()
         if not created_at_hour:
             created_at_hour = az_time.strftime("%I %p").lstrip('0')
             
-        filepath = os.path.join(os.getcwd(), "RO Reports", f"TekmetricGemba_RO_{yesterday_short}_H{az_time.hour:02d}.csv")
+        filepath = os.path.join(os.getcwd(), "RO Reports", f"TekmetricGemba_RO_{today_short}_H{az_time.hour:02d}.csv")
         
         headers, data = read_csv_data(filepath)
         if not headers:
@@ -291,7 +291,7 @@ def upload_ro_reports(created_at_hour=None):
             success = upsert_data_with_created_at(conn, 'ro_marketing_2', headers, data, key_columns)
             
             if success:
-                # Log the Created_At and location information
+                # Log the Created_At and location information - FIXED: use today instead of yesterday
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT Location, COUNT(*) as RecordCount, MAX(Created_At) as LatestCreatedAt
@@ -299,7 +299,7 @@ def upload_ro_reports(created_at_hour=None):
                     WHERE Report_Date = %s 
                     GROUP BY Location
                     ORDER BY Location
-                """, (yesterday.strftime("%m/%d/%Y"),))
+                """, (today.strftime("%m/%d/%Y"),))  # FIXED: changed from yesterday to today
                 
                 location_info = cursor.fetchall()
                 print(f"RO data uploaded for {len(location_info)} locations:")
@@ -335,19 +335,19 @@ def upload_all_reports(created_at_hour=None):
                 conn = create_connection()
                 if conn:
                     cursor = conn.cursor()
-                    yesterday = get_yesterday()
-                    yesterday_formatted = yesterday.strftime("%m/%d/%Y")
+                    today = get_yesterday()  # Function name kept for compatibility but now returns today
+                    today_formatted = today.strftime("%m/%d/%Y")
                     
                     # Get count from both tables
                     cursor.execute("SELECT COUNT(*) FROM [custom_financials_2] WHERE Report_Date = %s AND Created_At = %s", 
-                                 (yesterday_formatted, created_at_hour))
+                                 (today_formatted, created_at_hour))
                     financial_count = cursor.fetchone()[0]
                     
                     cursor.execute("SELECT COUNT(*) FROM [ro_marketing_2] WHERE Report_Date = %s AND Created_At = %s", 
-                                 (yesterday_formatted, created_at_hour))
+                                 (today_formatted, created_at_hour))
                     ro_count = cursor.fetchone()[0]
                     
-                    print(f"\nUpload Summary for {yesterday_formatted} at {created_at_hour}:")
+                    print(f"\nUpload Summary for {today_formatted} at {created_at_hour}:")
                     print(f"  custom_financials_2: {financial_count} records")
                     print(f"  ro_marketing_2: {ro_count} records")
                     
