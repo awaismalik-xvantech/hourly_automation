@@ -105,8 +105,8 @@ def show_hourly_schedule():
     print(f"Next scheduled run: {az_time.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)}")
     print(f"Created_At value for this run: {az_time.strftime('%I %p').lstrip('0')}")
     
-    yesterday = az_time - datetime.timedelta(days=1)
-    print(f"Processing data for: {yesterday.strftime('%m/%d/%Y')} (yesterday)")
+    yesterday = az_time  # Changed from yesterday to today
+    print(f"Processing data for: {yesterday.strftime('%m/%d/%Y')} (today)")
 
 def test_automation():
     arizona_time = get_arizona_time()
@@ -149,24 +149,24 @@ def test_automation():
             conn = create_connection()
             if conn:
                 cursor = conn.cursor()
-                yesterday = (get_arizona_time() - datetime.timedelta(days=1)).strftime("%m/%d/%Y")
+                today = (get_arizona_time()).strftime("%m/%d/%Y")  # Changed from yesterday to today
                 current_hour = get_arizona_time().strftime("%I %p").lstrip('0')
                 
                 # Check financial records
                 cursor.execute("SELECT COUNT(*) FROM [custom_financials_2] WHERE Report_Date = %s AND Created_At = %s", 
-                             (yesterday, current_hour))
+                             (today, current_hour))
                 financial_count = cursor.fetchone()[0]
-                print(f"  custom_financials_2: {financial_count} records for {yesterday} at {current_hour}")
+                print(f"  custom_financials_2: {financial_count} records for {today} at {current_hour}")
                 
                 # Check RO records
                 cursor.execute("SELECT COUNT(*) FROM [ro_marketing_2] WHERE Report_Date = %s AND Created_At = %s", 
-                             (yesterday, current_hour))
+                             (today, current_hour))
                 ro_count = cursor.fetchone()[0]
-                print(f"  ro_marketing_2: {ro_count} records for {yesterday} at {current_hour}")
+                print(f"  ro_marketing_2: {ro_count} records for {today} at {current_hour}")
                 
                 # Show locations
                 cursor.execute("SELECT DISTINCT Location FROM [ro_marketing_2] WHERE Report_Date = %s AND Created_At = %s", 
-                             (yesterday, current_hour))
+                             (today, current_hour))
                 locations = [row[0] for row in cursor.fetchall()]
                 print(f"  Locations processed: {', '.join(locations) if locations else 'None'}")
                 
