@@ -15,7 +15,7 @@ def run_automation():
     print("=" * 50)
     
     try:
-        success = main(headless=True)  # Always headless for scheduled runs
+        success = main()  # Remove headless parameter
         
         finish_time = get_arizona_time()
         if success:
