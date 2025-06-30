@@ -123,8 +123,8 @@ def test_automation():
         print("STARTING HOURLY AUTOMATION TEST...")
         print("=" * 50)
         
-        # Run in visible mode for testing
-        success = main(headless=False)
+        # Run without headless parameter
+        success = main()
         
         finish_time = get_arizona_time()
         print("\n" + "=" * 50)
