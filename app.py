@@ -80,18 +80,38 @@ def simple_page_wait(page):
 def find_export_button(page):
     selectors = [
         "button:has-text('Export')",
-        "[data-cy='button']:has-text('Export')",
+        "[data-cy='button']:has-text('Export')", 
         "button[class*='export' i]",
         ".export-button",
         "button:has-text('export')",
         "span:has-text('Export')",
-        "[role='button']:has-text('Export')"
+        "[role='button']:has-text('Export')",
+        # NEW SELECTORS ADDED:
+        "button[type='button']:has-text('Export')",
+        ".MuiButton-root:has-text('Export')",
+        "[data-testid*='export']",
+        "button[aria-label*='Export']",
+        "*:has-text('Export'):visible",
+        "button.btn:has-text('Export')",
+        ".btn-primary:has-text('Export')",
+        "input[value='Export']",
+        "[title*='Export']"
     ]
     
-    # Wait longer and try multiple selectors
-    for attempt in range(3):
-        print(f"  Export button search attempt {attempt + 1}/3...")
-        wait_random(2, 4)
+    # Wait even longer and try more attempts
+    for attempt in range(5):  # Increased from 3 to 5 attempts
+        print(f"  Export button search attempt {attempt + 1}/5...")
+        wait_random(4, 7)  # Longer wait (was 2-4)
+        
+        # Try to scroll to make sure button is visible
+        try:
+            page.evaluate("window.scrollTo(0, 0)")  # Scroll to top
+            wait_random(1, 2)
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")  # Scroll to bottom
+            wait_random(1, 2)
+            page.evaluate("window.scrollTo(0, 0)")  # Back to top
+        except:
+            pass
         
         for selector in selectors:
             try:
@@ -106,9 +126,23 @@ def find_export_button(page):
             except:
                 continue
         
-        if attempt < 2:
-            print("  Export button not found, waiting...")
-            wait_random(3, 5)
+        if attempt < 4:
+            print("  Export button not found, waiting longer...")
+            wait_random(6, 10)  # Even longer wait between attempts
+    
+    # Final debug attempt - log all buttons on page
+    try:
+        all_buttons = page.locator("button, input[type='button'], [role='button']")
+        button_count = all_buttons.count()
+        print(f"  DEBUG: Found {button_count} total buttons on page")
+        for i in range(min(button_count, 10)):  # Check first 10 buttons
+            try:
+                button_text = all_buttons.nth(i).text_content()
+                print(f"    Button {i+1}: '{button_text}'")
+            except:
+                pass
+    except:
+        pass
     
     return None
 
@@ -116,11 +150,37 @@ def download_financial_csv(page, filename, download_dir):
     try:
         print("Looking for Export button...")
         print("Waiting for page to fully load...")
-        wait_random(5, 8)
+        
+        # Much longer wait for financial page
+        wait_random(8, 12)  # Increased from 5-8
+        
+        # Wait for page to be completely loaded
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)
+            wait_random(3, 5)
+        except:
+            print("  NetworkIdle timeout, continuing...")
         
         # Try to wait for any data loading indicators to disappear
         try:
-            page.wait_for_selector("[data-testid='loading'], .loading, .spinner", state="hidden", timeout=10000)
+            page.wait_for_selector("[data-testid='loading'], .loading, .spinner", state="hidden", timeout=15000)
+            print("  Loading indicators cleared")
+        except:
+            print("  No loading indicators found")
+        
+        # Wait for any tables or data to load
+        try:
+            page.wait_for_selector("table, .data-table, .report-table", timeout=10000)
+            print("  Data table detected")
+            wait_random(2, 4)
+        except:
+            print("  No data table detected")
+        
+        # Take debug screenshot
+        try:
+            screenshot_path = f"/app/debug_financial_page.png"
+            page.screenshot(path=screenshot_path)
+            print(f"  Debug screenshot saved: {screenshot_path}")
         except:
             pass
         
@@ -138,7 +198,7 @@ def download_financial_csv(page, filename, download_dir):
             print("Looking for CSV option...")
             csv_btn = page.locator("text=CSV").first
             try:
-                csv_btn.wait_for(state="visible", timeout=60000)
+                csv_btn.wait_for(state="visible", timeout=10000)
                 csv_btn.click()
                 print("CSV option clicked")
             except:
