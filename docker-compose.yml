@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  hourly_automation:
+    build: .
+    container_name: hourly_automation
+    env_file:
+      - .env
+    volumes:
+      - financial_reports:/app/Financial Reports
+      - ro_reports:/app/RO Reports
+    restart: always
+
+volumes:
+  financial_reports:
+  ro_reports: 
