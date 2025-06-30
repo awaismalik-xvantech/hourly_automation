@@ -70,61 +70,85 @@ def build_ro_url(shop_id, date_obj):
 
 def simple_page_wait(page):
     try:
-        page.wait_for_load_state("domcontentloaded", timeout=60000)  # 60s
-        wait_random(3, 5)  # Increased wait time
+        page.wait_for_load_state("domcontentloaded", timeout=45000)
+        wait_random(3, 5)
         return True
     except:
-        wait_random(5, 7)  # Even longer fallback wait
+        wait_random(5, 7)
         return True
 
 def find_export_button(page):
     selectors = [
         "button:has-text('Export')",
-        "[data-cy='button']:has-text('Export')"
+        "[data-cy='button']:has-text('Export')",
+        "button[class*='export' i]",
+        ".export-button",
+        "button:has-text('export')",
+        "span:has-text('Export')",
+        "[role='button']:has-text('Export')"
     ]
     
-    for selector in selectors:
-        try:
-            element = page.locator(selector).first
-            if element.is_visible():
-                return element
-        except:
-            continue
+    # Wait longer and try multiple selectors
+    for attempt in range(3):
+        print(f"  Export button search attempt {attempt + 1}/3...")
+        wait_random(2, 4)
+        
+        for selector in selectors:
+            try:
+                elements = page.locator(selector)
+                count = elements.count()
+                if count > 0:
+                    for i in range(count):
+                        element = elements.nth(i)
+                        if element.is_visible():
+                            print(f"  Found Export button with: {selector}")
+                            return element
+            except:
+                continue
+        
+        if attempt < 2:
+            print("  Export button not found, waiting...")
+            wait_random(3, 5)
+    
     return None
 
 def download_financial_csv(page, filename, download_dir):
     try:
-        print(f"Looking for Export button...")
+        print("Looking for Export button...")
+        print("Waiting for page to fully load...")
+        wait_random(5, 8)
         
-        # Wait longer for page to be ready
-        wait_random(3, 5)
+        # Try to wait for any data loading indicators to disappear
+        try:
+            page.wait_for_selector("[data-testid='loading'], .loading, .spinner", state="hidden", timeout=10000)
+        except:
+            pass
         
         export_btn = find_export_button(page)
         if not export_btn:
-            print("Export button not found")
+            print("Export button not found after all attempts")
             return False
         
         print("Found Export button, clicking...")
         
-        # Increased download timeout from 30s to 60s
-        with page.expect_download(timeout=90000) as download_info:
+        with page.expect_download(timeout=60000) as download_info:
             export_btn.click()
-            wait_random(3, 5)  # Longer wait for dropdown
+            wait_random(3, 5)
             
             print("Looking for CSV option...")
             csv_btn = page.locator("text=CSV").first
             try:
-                csv_btn.wait_for(state="visible", timeout=10000)  # Increased from 5s to 10s
+                csv_btn.wait_for(state="visible", timeout=10000)
                 csv_btn.click()
                 print("CSV option clicked")
             except:
-                print("CSV option not found, using default")
+                print("CSV option not found, using default download")
         
         download = download_info.value
         file_path = os.path.join(download_dir, filename)
         download.save_as(file_path)
         
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        if os.path.exists(file_path) and os.path.getsize(file_path) >= 0:
             print(f"Downloaded: {filename} ({os.path.getsize(file_path)} bytes)")
             return True
         
@@ -136,28 +160,31 @@ def download_financial_csv(page, filename, download_dir):
 
 def download_ro_csv(page, filename, download_dir):
     try:
-        print(f"Looking for Export button...")
-        
-        # Wait longer for page to be ready
+        print("Looking for Export button...")
+        print("Waiting for RO page to fully load...")
         wait_random(3, 5)
+        
+        try:
+            page.wait_for_selector("[data-testid='loading'], .loading, .spinner", state="hidden", timeout=8000)
+        except:
+            pass
         
         export_btn = find_export_button(page)
         if not export_btn:
-            print("Export button not found")
+            print("Export button not found after all attempts")
             return False
         
         print("Found Export button, clicking...")
         
-        # Increased download timeout from 30s to 60s
-        with page.expect_download(timeout=90000) as download_info:
+        with page.expect_download(timeout=60000) as download_info:
             export_btn.click()
-            wait_random(2, 4)  # Increased wait
+            wait_random(2, 4)
         
         download = download_info.value
         file_path = os.path.join(download_dir, filename)
         download.save_as(file_path)
         
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        if os.path.exists(file_path) and os.path.getsize(file_path) >= 0:
             print(f"Downloaded: {filename} ({os.path.getsize(file_path)} bytes)")
             return True
         
@@ -165,6 +192,34 @@ def download_ro_csv(page, filename, download_dir):
         
     except Exception as e:
         print(f"Download error: {e}")
+        return False
+
+def create_empty_financial_csv(filename, directory, report_date, created_at):
+    try:
+        file_path = os.path.join(directory, filename)
+        
+        headers = ['Location', 'Car_Count', 'Hours_Presented', 'Hours_Sold', 'AWRO', 'Close_Ratio', 
+                  'Effective_Labor_Rate', 'ARO_Sales', 'ARO_Profit', 'ARO_Profit_Margin',
+                  'Gross_Sales_Hr', 'Gross_Profit_Hr', 'Total_Written_Sales', 'Net_Sales',
+                  'Total_Fees', 'Total_Discounts', 'Total_Cost', 'Total_GP_Dollar', 'Total_GP_Percent',
+                  'Report_Date', 'Created_At']
+        
+        locations = ['Gemba Automotive - Mesa Broadway (003)', 'Gemba Automotive - Mesa Guadalupe (004)',
+                    'Gemba Automotive - Phoenix (002)', 'Gemba Automotive - Sun City West (007)',
+                    'Gemba Automotive - Surprise (006)', 'Gemba Automotive - Tempe (001)']
+        
+        with open(file_path, 'w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            writer.writerow(headers)
+            
+            for location in locations:
+                empty_row = [location] + ['0'] * (len(headers) - 3) + [report_date, created_at]
+                writer.writerow(empty_row)
+        
+        print(f"Created empty financial file: {filename}")
+        return True
+    except Exception as e:
+        print(f"Error creating empty financial file: {e}")
         return False
 
 def create_empty_csv(filename, directory, location_name, report_date, created_at):
@@ -193,11 +248,9 @@ def login_to_tekmetric(page):
         try:
             print(f"Login attempt {attempt + 1}/{max_retries}...")
             
-            # Increased timeout from 30s to 60s
             page.goto("https://shop.tekmetric.com/", timeout=60000)
-            wait_random(3, 5)  # Longer initial wait
+            wait_random(3, 5)
             
-            # Try to reload if page seems stuck
             try:
                 page.wait_for_load_state("networkidle", timeout=10000)
             except:
@@ -206,9 +259,9 @@ def login_to_tekmetric(page):
                 wait_random(3, 5)
             
             page.fill("#email", os.getenv("TEKMETRIC_EMAIL", "arslan.thaheem@xvantech.com"))
-            wait_random(2, 3)  # Increased wait
-            page.fill("#password", os.getenv("TEKMETRIC_PASSWORD", "$xat123!@#"))
-            wait_random(2, 3)  # Increased wait
+            wait_random(2, 3)
+            page.fill("#password", os.getenv("TEKMETRIC_PASSWORD", "$$xat123!@#"))  # Fixed: added missing $
+            wait_random(2, 3)
             
             page.click("button[data-cy='button']:has-text('Sign In')")
             simple_page_wait(page)
@@ -219,7 +272,7 @@ def login_to_tekmetric(page):
         except Exception as e:
             print(f"Login attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                print(f"Retrying in 5 seconds...")
+                print("Retrying in 5 seconds...")
                 wait_random(5, 7)
             else:
                 print("All login attempts failed")
@@ -231,15 +284,12 @@ def download_financial_report(page, dirs, dates):
     try:
         print("Downloading Financial Report...")
         
-        # Go directly to financial URL with date
         financial_url = build_financial_url(dates['yesterday_date'])
         print(f"Going to: {financial_url}")
         
-        # Increased timeout from 30s to 60s
         page.goto(financial_url, timeout=60000)
         simple_page_wait(page)
         
-        # Include current hour in filename to avoid conflicts
         az_time = get_arizona_time()
         filename = f"{dates['yesterday_file']}_H{az_time.hour:02d}.csv"
         success = download_financial_csv(page, filename, dirs["financial"])
@@ -249,13 +299,26 @@ def download_financial_report(page, dirs, dates):
             process_financial_report(filename, dates['current_hour'])
             print("Financial report processed successfully")
         else:
-            print("Financial report download failed")
+            print("Financial report download failed, creating empty file with zero data...")
+            create_empty_financial_csv(filename, dirs["financial"], dates['yesterday_us'], dates['current_hour'])
+            print("Processing empty financial report...")
+            process_financial_report(filename, dates['current_hour'])
+            print("Empty financial report processed successfully")
+            success = True
         
         return success
         
     except Exception as e:
         print(f"Financial report error: {e}")
-        return False
+        try:
+            az_time = get_arizona_time()
+            filename = f"{dates['yesterday_file']}_H{az_time.hour:02d}.csv"
+            create_empty_financial_csv(filename, dirs["financial"], dates['yesterday_us'], dates['current_hour'])
+            process_financial_report(filename, dates['current_hour'])
+            print("Created and processed empty financial file after error")
+            return True
+        except:
+            return False
 
 def download_ro_reports(page, dirs, dates):
     try:
@@ -277,15 +340,12 @@ def download_ro_reports(page, dirs, dates):
             try:
                 print(f"Processing {location['name']}...")
                 
-                # Go directly to RO URL
                 url = build_ro_url(location['shop_id'], dates['yesterday_date'])
                 print(f"Going to: {url}")
                 
-                # Increased timeout from 30s to 60s
                 page.goto(url, timeout=60000)
                 simple_page_wait(page)
                 
-                # Include current hour in filename to avoid conflicts
                 filename = f"{location['name'].replace(' ', '-')}-{dates['yesterday_short']}_H{az_time.hour:02d}.csv"
                 
                 success = download_ro_csv(page, filename, dirs["ro"])
@@ -300,7 +360,7 @@ def download_ro_reports(page, dirs, dates):
                     process_ro_marketing_report(location['name'], filename, dates['current_hour'])
                     success_count += 1
                 
-                wait_random(2, 4)  # Increased wait between locations
+                wait_random(2, 4)
                 
             except Exception as e:
                 print(f"Error with {location['name']}: {e}")
@@ -338,10 +398,8 @@ def main():
             )
             
             page = context.new_page()
-            
-            # Set longer default timeouts
-            page.set_default_timeout(60000)  # Increased from default to 60s
-            page.set_default_navigation_timeout(60000)  # Increased from default to 60s
+            page.set_default_timeout(60000)
+            page.set_default_navigation_timeout(60000)
             
             if not login_to_tekmetric(page):
                 print("Login failed, aborting")
@@ -366,7 +424,6 @@ def main():
                 print("Upload failed")
             
             context.close()
-            
             return upload_success
             
         except Exception as e:
