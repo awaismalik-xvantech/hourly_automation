@@ -48,8 +48,6 @@ RO Reports/*.csv
 *.png
 error_screenshot.png
 
-# Environment variables
-.env
 
 # Docker
 .dockerignore
