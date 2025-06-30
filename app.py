@@ -27,13 +27,13 @@ def get_current_hour_12format():
 
 def get_date_info():
     az_now = get_arizona_time()
-    az_yesterday = az_now - datetime.timedelta(days=1)
+    az_today = az_now  # Changed from yesterday to today
     
     return {
-        "yesterday_file": format_date(az_yesterday),
-        "yesterday_short": format_date_short(az_yesterday),
-        "yesterday_us": az_yesterday.strftime("%m/%d/%Y"),
-        "yesterday_date": az_yesterday.date(),
+        "yesterday_file": format_date(az_today),  # Now today's data
+        "yesterday_short": format_date_short(az_today),  # Now today's data
+        "yesterday_us": az_today.strftime("%m/%d/%Y"),  # Now today's data
+        "yesterday_date": az_today.date(),  # Now today's data
         "current_hour": get_current_hour_12format()
     }
 
@@ -284,14 +284,14 @@ def download_financial_report(page, dirs, dates):
     try:
         print("Downloading Financial Report...")
         
-        financial_url = build_financial_url(dates['yesterday_date'])
+        financial_url = build_financial_url(dates['yesterday_date'])  # Still uses same key but now contains today's date
         print(f"Going to: {financial_url}")
         
         page.goto(financial_url, timeout=60000)
         simple_page_wait(page)
         
         az_time = get_arizona_time()
-        filename = f"{dates['yesterday_file']}_H{az_time.hour:02d}.csv"
+        filename = f"{dates['yesterday_file']}_H{az_time.hour:02d}.csv"  # Still uses same key but now contains today's date
         success = download_financial_csv(page, filename, dirs["financial"])
         
         if success:
@@ -300,7 +300,7 @@ def download_financial_report(page, dirs, dates):
             print("Financial report processed successfully")
         else:
             print("Financial report download failed, creating empty file with zero data...")
-            create_empty_financial_csv(filename, dirs["financial"], dates['yesterday_us'], dates['current_hour'])
+            create_empty_financial_csv(filename, dirs["financial"], dates['yesterday_us'], dates['current_hour'])  # Contains today's date
             print("Processing empty financial report...")
             process_financial_report(filename, dates['current_hour'])
             print("Empty financial report processed successfully")
@@ -312,8 +312,8 @@ def download_financial_report(page, dirs, dates):
         print(f"Financial report error: {e}")
         try:
             az_time = get_arizona_time()
-            filename = f"{dates['yesterday_file']}_H{az_time.hour:02d}.csv"
-            create_empty_financial_csv(filename, dirs["financial"], dates['yesterday_us'], dates['current_hour'])
+            filename = f"{dates['yesterday_file']}_H{az_time.hour:02d}.csv"  # Contains today's date
+            create_empty_financial_csv(filename, dirs["financial"], dates['yesterday_us'], dates['current_hour'])  # Contains today's date
             process_financial_report(filename, dates['current_hour'])
             print("Created and processed empty financial file after error")
             return True
@@ -340,13 +340,13 @@ def download_ro_reports(page, dirs, dates):
             try:
                 print(f"Processing {location['name']}...")
                 
-                url = build_ro_url(location['shop_id'], dates['yesterday_date'])
+                url = build_ro_url(location['shop_id'], dates['yesterday_date'])  # Still uses same key but now contains today's date
                 print(f"Going to: {url}")
                 
                 page.goto(url, timeout=60000)
                 simple_page_wait(page)
                 
-                filename = f"{location['name'].replace(' ', '-')}-{dates['yesterday_short']}_H{az_time.hour:02d}.csv"
+                filename = f"{location['name'].replace(' ', '-')}-{dates['yesterday_short']}_H{az_time.hour:02d}.csv"  # Still uses same key but now contains today's date
                 
                 success = download_ro_csv(page, filename, dirs["ro"])
                 
@@ -356,7 +356,7 @@ def download_ro_reports(page, dirs, dates):
                     print(f"Successfully processed {location['name']}")
                 else:
                     print(f"Download failed for {location['name']}, creating empty file")
-                    create_empty_csv(filename, dirs["ro"], location['name'], dates['yesterday_us'], dates['current_hour'])
+                    create_empty_csv(filename, dirs["ro"], location['name'], dates['yesterday_us'], dates['current_hour'])  # Contains today's date
                     process_ro_marketing_report(location['name'], filename, dates['current_hour'])
                     success_count += 1
                 
@@ -364,8 +364,8 @@ def download_ro_reports(page, dirs, dates):
                 
             except Exception as e:
                 print(f"Error with {location['name']}: {e}")
-                filename = f"{location['name'].replace(' ', '-')}-{dates['yesterday_short']}_H{az_time.hour:02d}.csv"
-                create_empty_csv(filename, dirs["ro"], location['name'], dates['yesterday_us'], dates['current_hour'])
+                filename = f"{location['name'].replace(' ', '-')}-{dates['yesterday_short']}_H{az_time.hour:02d}.csv"  # Contains today's date
+                create_empty_csv(filename, dirs["ro"], location['name'], dates['yesterday_us'], dates['current_hour'])  # Contains today's date
                 process_ro_marketing_report(location['name'], filename, dates['current_hour'])
                 success_count += 1
         
@@ -382,7 +382,7 @@ def main():
     dirs = setup_directories()
     dates = get_date_info()
     
-    print(f"Processing date: {dates['yesterday_us']} at {dates['current_hour']}")
+    print(f"Processing date: {dates['yesterday_us']} (TODAY) at {dates['current_hour']}")
     
     with sync_playwright() as p:
         browser = None
@@ -410,10 +410,10 @@ def main():
             
             if ro_success:
                 print("Combining RO reports...")
-                combine_ro_reports(dates['yesterday_short'], dates['current_hour'])
+                combine_ro_reports(dates['yesterday_short'], dates['current_hour'])  # Still uses same key but now contains today's data
             
             print("Verifying data...")
-            verify_data_accuracy(dates['yesterday_file'], dates['yesterday_short'], dates['current_hour'])
+            verify_data_accuracy(dates['yesterday_file'], dates['yesterday_short'], dates['current_hour'])  # Still uses same keys but now contains today's data
             
             print("Uploading to SQL...")
             upload_success = upload_all_reports(dates['current_hour'])
