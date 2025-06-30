@@ -1,3 +1,13 @@
+# Python 3.10 compatible
+
+# Web automation and scraping
 playwright
+
+# Database connectivity
+pymssql
+
+# Date and timezone handling
 pytz
-pymssql 
+
+# Task scheduling (not used in hourly version but kept for compatibility)
+schedule

@@ -1,15 +1,40 @@
 version: '3.8'
-services:
-  hourly_automation:
-    build: .
-    container_name: hourly_automation
-    env_file:
-      - .env
-    volumes:
-      - financial_reports:/app/Financial Reports
-      - ro_reports:/app/RO Reports
-    restart: always
 
-volumes:
-  financial_reports:
-  ro_reports: 
+services:
+  tekmetric-hourly-automation:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: gemba-tekmetric-hourly-automation
+    restart: unless-stopped
+    environment:
+      - TZ=America/Phoenix
+      - PYTHONUNBUFFERED=1
+      - TEKMETRIC_EMAIL=${TEKMETRIC_EMAIL:-arslan.thaheem@xvantech.com}
+      - TEKMETRIC_PASSWORD=${TEKMETRIC_PASSWORD:-$$xat123!@#}
+      - SQL_SERVER=${SQL_SERVER:-gembadb.database.windows.net}
+      - SQL_DATABASE=${SQL_DATABASE:-gemba}
+      - SQL_USERNAME=${SQL_USERNAME:-gembauser}
+      - SQL_PASSWORD=${SQL_PASSWORD:-Karachi%007}
+      - SQL_PORT=${SQL_PORT:-1433}
+    volumes:
+      - ./Financial Reports:/app/Financial Reports
+      - ./RO Reports:/app/RO Reports
+      - ./logs:/app/logs
+    networks:
+      - tekmetric-hourly-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/app.py') else 1)"]
+      interval: 300s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+networks:
+  tekmetric-hourly-network:
+    driver: bridge

@@ -5,8 +5,8 @@ import datetime
 import pytz
 import csv
 from playwright.sync_api import sync_playwright
-from .reports import process_financial_report, process_ro_marketing_report, combine_ro_reports, verify_data_accuracy
-from .sql import upload_all_reports
+from reports import process_financial_report, process_ro_marketing_report, combine_ro_reports, verify_data_accuracy
+from sql import upload_all_reports
 
 def wait_random(min_sec=1, max_sec=2):
     time.sleep(random.uniform(min_sec, max_sec))
@@ -20,14 +20,21 @@ def format_date(dt):
 def format_date_short(dt):
     return f"{dt.month:02d}.{dt.day:02d}.{dt.year-2000:02d}"
 
+def get_current_hour_12format():
+    """Get current Arizona time in 12-hour format for Created_At column"""
+    az_now = get_arizona_time()
+    return az_now.strftime("%I %p").lstrip('0')  # Remove leading zero and add AM/PM
+
 def get_date_info():
     az_now = get_arizona_time()
+    az_yesterday = az_now - datetime.timedelta(days=1)
+    
     return {
-        "today_file": format_date(az_now),
-        "today_short": format_date_short(az_now),
-        "today_us": az_now.strftime("%m/%d/%Y"),
-        "today_date": az_now.date(),
-        "created_at": az_now.strftime("%I:%M %p")
+        "yesterday_file": format_date(az_yesterday),
+        "yesterday_short": format_date_short(az_yesterday),
+        "yesterday_us": az_yesterday.strftime("%m/%d/%Y"),
+        "yesterday_date": az_yesterday.date(),
+        "current_hour": get_current_hour_12format()
     }
 
 def setup_directories():
@@ -42,27 +49,32 @@ def build_financial_url(date_obj):
     arizona_tz = pytz.timezone('US/Arizona')
     start_az = arizona_tz.localize(datetime.datetime.combine(date_obj, datetime.time.min))
     end_az = arizona_tz.localize(datetime.datetime.combine(date_obj, datetime.time.max))
+    
     start_utc = start_az.astimezone(pytz.utc)
     end_utc = end_az.astimezone(pytz.utc)
+    
     start_iso = start_utc.strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
     end_iso = end_utc.strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
+    
     return f"https://shop.tekmetric.com/admin/org/464/reports/financial/custom?start={start_iso}&end={end_iso}"
 
 def build_ro_url(shop_id, date_obj):
     arizona_tz = pytz.timezone('US/Arizona')
     start_dt = arizona_tz.localize(datetime.datetime.combine(date_obj, datetime.time(0, 0, 0)))
     end_dt = arizona_tz.localize(datetime.datetime.combine(date_obj, datetime.time(23, 59, 59)))
+    
     start_str = start_dt.strftime('%Y-%m-%dT%H:%M:%S.000-07:00').replace(':', '%3A')
     end_str = end_dt.strftime('%Y-%m-%dT%H:%M:%S.999-07:00').replace(':', '%3A')
+    
     return f"https://shop.tekmetric.com/admin/org/464/reports/customer/ro-marketing-source?start={start_str}&end={end_str}&shopIds={shop_id}"
 
 def simple_page_wait(page):
     try:
-        page.wait_for_load_state("domcontentloaded", timeout=15000)
-        wait_random(2, 3)
+        page.wait_for_load_state("domcontentloaded", timeout=60000)  # 60s
+        wait_random(3, 5)  # Increased wait time
         return True
     except:
-        wait_random(3, 4)
+        wait_random(5, 7)  # Even longer fallback wait
         return True
 
 def find_export_button(page):
@@ -70,6 +82,7 @@ def find_export_button(page):
         "button:has-text('Export')",
         "[data-cy='button']:has-text('Export')"
     ]
+    
     for selector in selectors:
         try:
             element = page.locator(selector).first
@@ -82,29 +95,41 @@ def find_export_button(page):
 def download_financial_csv(page, filename, download_dir):
     try:
         print(f"Looking for Export button...")
+        
+        # Wait longer for page to be ready
+        wait_random(3, 5)
+        
         export_btn = find_export_button(page)
         if not export_btn:
             print("Export button not found")
             return False
+        
         print("Found Export button, clicking...")
-        with page.expect_download(timeout=30000) as download_info:
+        
+        # Increased download timeout from 30s to 60s
+        with page.expect_download(timeout=90000) as download_info:
             export_btn.click()
-            wait_random(2, 3)
+            wait_random(3, 5)  # Longer wait for dropdown
+            
             print("Looking for CSV option...")
             csv_btn = page.locator("text=CSV").first
             try:
-                csv_btn.wait_for(state="visible", timeout=5000)
+                csv_btn.wait_for(state="visible", timeout=10000)  # Increased from 5s to 10s
                 csv_btn.click()
                 print("CSV option clicked")
             except:
                 print("CSV option not found, using default")
+        
         download = download_info.value
         file_path = os.path.join(download_dir, filename)
         download.save_as(file_path)
+        
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
             print(f"Downloaded: {filename} ({os.path.getsize(file_path)} bytes)")
             return True
+        
         return False
+        
     except Exception as e:
         print(f"Download error: {e}")
         return False
@@ -112,21 +137,32 @@ def download_financial_csv(page, filename, download_dir):
 def download_ro_csv(page, filename, download_dir):
     try:
         print(f"Looking for Export button...")
+        
+        # Wait longer for page to be ready
+        wait_random(3, 5)
+        
         export_btn = find_export_button(page)
         if not export_btn:
             print("Export button not found")
             return False
+        
         print("Found Export button, clicking...")
-        with page.expect_download(timeout=30000) as download_info:
+        
+        # Increased download timeout from 30s to 60s
+        with page.expect_download(timeout=90000) as download_info:
             export_btn.click()
-            wait_random(1, 2)
+            wait_random(2, 4)  # Increased wait
+        
         download = download_info.value
         file_path = os.path.join(download_dir, filename)
         download.save_as(file_path)
+        
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
             print(f"Downloaded: {filename} ({os.path.getsize(file_path)} bytes)")
             return True
+        
         return False
+        
     except Exception as e:
         print(f"Download error: {e}")
         return False
@@ -136,12 +172,14 @@ def create_empty_csv(filename, directory, location_name, report_date, created_at
         file_path = os.path.join(directory, filename)
         headers = ['Marketing Source', 'Total Sales', 'RO Count', 'New Sales', 'New RO Count',
                   'Repeat Sales', 'Repeat RO Count', 'Average RO', 'GP $', 'GP %', 'Close Ratio',
-                  'Location', 'Report_Date', 'Created At']
+                  'Location', 'Report_Date', 'Created_At']
+        
         with open(file_path, 'w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
             writer.writerow(headers)
             empty_row = ['No Data', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', location_name, report_date, created_at]
             writer.writerow(empty_row)
+        
         print(f"Created empty file: {filename}")
         return True
     except Exception as e:
@@ -149,37 +187,72 @@ def create_empty_csv(filename, directory, location_name, report_date, created_at
         return False
 
 def login_to_tekmetric(page):
-    try:
-        page.goto("https://shop.tekmetric.com/", timeout=30000)
-        wait_random(2, 3)
-        page.fill("#email", os.getenv("TEKMETRIC_EMAIL", "arslan.thaheem@xvantech.com"))
-        wait_random(1, 2)
-        page.fill("#password", os.getenv("TEKMETRIC_PASSWORD", "$$xat123!@#"))
-        wait_random(1, 2)
-        page.click("button[data-cy='button']:has-text('Sign In')")
-        simple_page_wait(page)
-        print("Login completed")
-        return True
-    except Exception as e:
-        print(f"Login failed: {e}")
-        return False
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"Login attempt {attempt + 1}/{max_retries}...")
+            
+            # Increased timeout from 30s to 60s
+            page.goto("https://shop.tekmetric.com/", timeout=60000)
+            wait_random(3, 5)  # Longer initial wait
+            
+            # Try to reload if page seems stuck
+            try:
+                page.wait_for_load_state("networkidle", timeout=10000)
+            except:
+                print("Page loading slow, reloading...")
+                page.reload(timeout=60000)
+                wait_random(3, 5)
+            
+            page.fill("#email", os.getenv("TEKMETRIC_EMAIL", "arslan.thaheem@xvantech.com"))
+            wait_random(2, 3)  # Increased wait
+            page.fill("#password", os.getenv("TEKMETRIC_PASSWORD", "$xat123!@#"))
+            wait_random(2, 3)  # Increased wait
+            
+            page.click("button[data-cy='button']:has-text('Sign In')")
+            simple_page_wait(page)
+            
+            print("Login completed")
+            return True
+            
+        except Exception as e:
+            print(f"Login attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in 5 seconds...")
+                wait_random(5, 7)
+            else:
+                print("All login attempts failed")
+                return False
+    
+    return False
 
 def download_financial_report(page, dirs, dates):
     try:
         print("Downloading Financial Report...")
-        financial_url = build_financial_url(dates['today_date'])
+        
+        # Go directly to financial URL with date
+        financial_url = build_financial_url(dates['yesterday_date'])
         print(f"Going to: {financial_url}")
-        page.goto(financial_url, timeout=30000)
+        
+        # Increased timeout from 30s to 60s
+        page.goto(financial_url, timeout=60000)
         simple_page_wait(page)
-        filename = f"{dates['today_file']}.csv"
+        
+        # Include current hour in filename to avoid conflicts
+        az_time = get_arizona_time()
+        filename = f"{dates['yesterday_file']}_H{az_time.hour:02d}.csv"
         success = download_financial_csv(page, filename, dirs["financial"])
+        
         if success:
             print("Processing financial report...")
-            process_financial_report(dates['created_at'])
+            process_financial_report(filename, dates['current_hour'])
             print("Financial report processed successfully")
         else:
             print("Financial report download failed")
+        
         return success
+        
     except Exception as e:
         print(f"Financial report error: {e}")
         return False
@@ -187,6 +260,7 @@ def download_financial_report(page, dirs, dates):
 def download_ro_reports(page, dirs, dates):
     try:
         print("Downloading RO Marketing Reports...")
+        
         locations = [
             {"name": "Mesa Broadway", "shop_id": "10738"},
             {"name": "Mesa Guadalupe", "shop_id": "11965"},
@@ -195,43 +269,61 @@ def download_ro_reports(page, dirs, dates):
             {"name": "Sun City West", "shop_id": "13513"},
             {"name": "Surprise", "shop_id": "13512"}
         ]
+        
         success_count = 0
+        az_time = get_arizona_time()
+        
         for location in locations:
             try:
                 print(f"Processing {location['name']}...")
-                url = build_ro_url(location['shop_id'], dates['today_date'])
+                
+                # Go directly to RO URL
+                url = build_ro_url(location['shop_id'], dates['yesterday_date'])
                 print(f"Going to: {url}")
-                page.goto(url, timeout=30000)
+                
+                # Increased timeout from 30s to 60s
+                page.goto(url, timeout=60000)
                 simple_page_wait(page)
-                filename = f"{location['name'].replace(' ', '-')}-{dates['today_short']}.csv"
+                
+                # Include current hour in filename to avoid conflicts
+                filename = f"{location['name'].replace(' ', '-')}-{dates['yesterday_short']}_H{az_time.hour:02d}.csv"
+                
                 success = download_ro_csv(page, filename, dirs["ro"])
+                
                 if success:
-                    process_ro_marketing_report(location['name'], filename, dates['created_at'])
+                    process_ro_marketing_report(location['name'], filename, dates['current_hour'])
                     success_count += 1
                     print(f"Successfully processed {location['name']}")
                 else:
                     print(f"Download failed for {location['name']}, creating empty file")
-                    create_empty_csv(filename, dirs["ro"], location['name'], dates['today_us'], dates['created_at'])
-                    process_ro_marketing_report(location['name'], filename, dates['created_at'])
+                    create_empty_csv(filename, dirs["ro"], location['name'], dates['yesterday_us'], dates['current_hour'])
+                    process_ro_marketing_report(location['name'], filename, dates['current_hour'])
                     success_count += 1
-                wait_random(1, 2)
+                
+                wait_random(2, 4)  # Increased wait between locations
+                
             except Exception as e:
                 print(f"Error with {location['name']}: {e}")
-                filename = f"{location['name'].replace(' ', '-')}-{dates['today_short']}.csv"
-                create_empty_csv(filename, dirs["ro"], location['name'], dates['today_us'], dates['created_at'])
-                process_ro_marketing_report(location['name'], filename, dates['created_at'])
+                filename = f"{location['name'].replace(' ', '-')}-{dates['yesterday_short']}_H{az_time.hour:02d}.csv"
+                create_empty_csv(filename, dirs["ro"], location['name'], dates['yesterday_us'], dates['current_hour'])
+                process_ro_marketing_report(location['name'], filename, dates['current_hour'])
                 success_count += 1
+        
         print(f"RO processing completed: {success_count}/6")
         return success_count >= 4
+        
     except Exception as e:
         print(f"RO reports error: {e}")
         return False
 
 def main():
-    print("Starting Tekmetric hourly automation...")
+    print("Starting Tekmetric Hourly Automation...")
+    
     dirs = setup_directories()
     dates = get_date_info()
-    print(f"Processing date: {dates['today_us']} at {dates['created_at']}")
+    
+    print(f"Processing date: {dates['yesterday_us']} at {dates['current_hour']}")
+    
     with sync_playwright() as p:
         browser = None
         try:
@@ -239,26 +331,44 @@ def main():
                 headless=True,
                 args=['--no-sandbox', '--disable-dev-shm-usage']
             )
+            
             context = browser.new_context(
                 accept_downloads=True,
                 viewport={"width": 1920, "height": 1080}
             )
+            
             page = context.new_page()
+            
+            # Set longer default timeouts
+            page.set_default_timeout(60000)  # Increased from default to 60s
+            page.set_default_navigation_timeout(60000)  # Increased from default to 60s
+            
             if not login_to_tekmetric(page):
                 print("Login failed, aborting")
                 return False
+            
             financial_success = download_financial_report(page, dirs, dates)
             ro_success = download_ro_reports(page, dirs, dates)
+            
             if ro_success:
-                combine_ro_reports(dates['today_short'])
-            verify_data_accuracy(dates['today_file'], dates['today_short'])
-            upload_success = upload_all_reports()
+                print("Combining RO reports...")
+                combine_ro_reports(dates['yesterday_short'], dates['current_hour'])
+            
+            print("Verifying data...")
+            verify_data_accuracy(dates['yesterday_file'], dates['yesterday_short'], dates['current_hour'])
+            
+            print("Uploading to SQL...")
+            upload_success = upload_all_reports(dates['current_hour'])
+            
             if upload_success:
                 print("Upload completed successfully")
             else:
                 print("Upload failed")
+            
             context.close()
+            
             return upload_success
+            
         except Exception as e:
             print(f"Automation error: {e}")
             return False
@@ -267,4 +377,4 @@ def main():
                 browser.close()
 
 if __name__ == "__main__":
-    main() 
+    main()
