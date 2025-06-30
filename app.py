@@ -70,7 +70,7 @@ def build_ro_url(shop_id, date_obj):
 
 def simple_page_wait(page):
     try:
-        page.wait_for_load_state("domcontentloaded", timeout=45000)
+        page.wait_for_load_state("domcontentloaded", timeout=60000)
         wait_random(3, 5)
         return True
     except:
@@ -138,7 +138,7 @@ def download_financial_csv(page, filename, download_dir):
             print("Looking for CSV option...")
             csv_btn = page.locator("text=CSV").first
             try:
-                csv_btn.wait_for(state="visible", timeout=10000)
+                csv_btn.wait_for(state="visible", timeout=60000)
                 csv_btn.click()
                 print("CSV option clicked")
             except:
@@ -252,7 +252,7 @@ def login_to_tekmetric(page):
             wait_random(3, 5)
             
             try:
-                page.wait_for_load_state("networkidle", timeout=10000)
+                page.wait_for_load_state("networkidle", timeout=60000)
             except:
                 print("Page loading slow, reloading...")
                 page.reload(timeout=60000)
