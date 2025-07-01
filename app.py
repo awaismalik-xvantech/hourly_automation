@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 from reports import process_financial_report, process_ro_marketing_report, combine_ro_reports, verify_data_accuracy
 from sql import upload_all_reports
 
-def wait_random(min_sec=1, max_sec=2):
+def wait_random(min_sec=2, max_sec=4):
     time.sleep(random.uniform(min_sec, max_sec))
 
 def get_arizona_time():
@@ -21,19 +21,18 @@ def format_date_short(dt):
     return f"{dt.month:02d}.{dt.day:02d}.{dt.year-2000:02d}"
 
 def get_current_hour_12format():
-    """Get current Arizona time in 12-hour format for Created_At column"""
     az_now = get_arizona_time()
     return az_now.strftime("%I %p").lstrip('0')
 
 def get_date_info():
     az_now = get_arizona_time()
-    target_date = az_now  # Processing today's data
+    az_today = az_now
     
     return {
-        "target_file": format_date(target_date),
-        "target_short": format_date_short(target_date),
-        "target_us": target_date.strftime("%m/%d/%Y"),
-        "target_date": target_date.date(),
+        "yesterday_file": format_date(az_today),
+        "yesterday_short": format_date_short(az_today),
+        "yesterday_us": az_today.strftime("%m/%d/%Y"),
+        "yesterday_date": az_today.date(),
         "current_hour": get_current_hour_12format()
     }
 
@@ -45,363 +44,238 @@ def setup_directories():
     os.makedirs(ro_dir, exist_ok=True)
     return {"financial": financial_dir, "ro": ro_dir}
 
-# FIXED: More robust login with better session management
-def login_to_tekmetric(page):
-    """Enhanced login with better session verification"""
-    max_retries = 3
+def build_financial_url(date_obj):
+    arizona_tz = pytz.timezone('US/Arizona')
+    start_az = arizona_tz.localize(datetime.datetime.combine(date_obj, datetime.time.min))
+    end_az = arizona_tz.localize(datetime.datetime.combine(date_obj, datetime.time.max))
     
-    for attempt in range(max_retries):
-        try:
-            print(f"Login attempt {attempt + 1}/{max_retries}...")
-            
-            # Go to login page
-            page.goto("https://shop.tekmetric.com/", timeout=60000)
-            wait_random(3, 5)
-            
-            # Wait for page to fully load
-            page.wait_for_load_state("domcontentloaded")
-            wait_random(2, 3)
-            
-            # Check if already logged in
-            if is_logged_in(page):
-                print("Already logged in")
-                return True
-            
-            # Perform login
-            email = os.getenv("TEKMETRIC_EMAIL")
-            password = os.getenv("TEKMETRIC_PASSWORD")
-            
-            if not email or not password:
-                raise ValueError("TEKMETRIC_EMAIL and TEKMETRIC_PASSWORD must be set")
-            
-            # Fill credentials
-            page.fill("#email", email)
-            wait_random(1, 2)
-            page.fill("#password", password)
-            wait_random(1, 2)
-            
-            # Click sign in
-            page.click("button[data-cy='button']:has-text('Sign In')")
-            
-            # Wait for login to complete
-            page.wait_for_load_state("networkidle", timeout=30000)
-            wait_random(3, 5)
-            
-            # Verify login success
-            if is_logged_in(page):
-                print("Login successful")
-                return True
-            else:
-                print(f"Login verification failed on attempt {attempt + 1}")
-                
-        except Exception as e:
-            print(f"Login attempt {attempt + 1} failed: {e}")
-            if attempt < max_retries - 1:
-                print("Retrying in 5 seconds...")
-                wait_random(5, 7)
+    start_utc = start_az.astimezone(pytz.utc)
+    end_utc = end_az.astimezone(pytz.utc)
     
-    return False
+    start_iso = start_utc.strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
+    end_iso = end_utc.strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
+    
+    return f"https://shop.tekmetric.com/admin/org/464/reports/financial/custom?start={start_iso}&end={end_iso}"
 
-# FIXED: Better login verification
-def is_logged_in(page):
-    """Check if user is currently logged in"""
+def build_ro_url(shop_id, date_obj):
+    arizona_tz = pytz.timezone('US/Arizona')
+    start_dt = arizona_tz.localize(datetime.datetime.combine(date_obj, datetime.time(0, 0, 0)))
+    end_dt = arizona_tz.localize(datetime.datetime.combine(date_obj, datetime.time(23, 59, 59)))
+    
+    start_str = start_dt.strftime('%Y-%m-%dT%H:%M:%S.000-07:00').replace(':', '%3A')
+    end_str = end_dt.strftime('%Y-%m-%dT%H:%M:%S.999-07:00').replace(':', '%3A')
+    
+    return f"https://shop.tekmetric.com/admin/org/464/reports/customer/ro-marketing-source?start={start_str}&end={end_str}&shopIds={shop_id}"
+
+def simple_page_wait(page):
     try:
-        # Check for sign in button (indicates not logged in)
-        sign_in_visible = page.locator("button:has-text('Sign In')").is_visible(timeout=3000)
-        if sign_in_visible:
-            return False
-        
-        # Check for user menu or dashboard elements (indicates logged in)
-        logged_in_indicators = [
-            "[data-testid='user-menu']",
-            "text=Dashboard",
-            "text=Reports", 
-            ".user-avatar",
-            "[aria-label*='user']"
-        ]
-        
-        for indicator in logged_in_indicators:
-            try:
-                if page.locator(indicator).is_visible(timeout=2000):
-                    return True
-            except:
-                continue
-        
-        # Additional check - look for typical dashboard/app elements
-        app_elements = page.locator("nav, .navbar, .sidebar, .dashboard").count()
-        return app_elements > 0
-        
-    except Exception as e:
-        print(f"Login check error: {e}")
-        return False
+        page.wait_for_load_state("domcontentloaded", timeout=60000)
+        wait_random(5, 8)
+        return True
+    except:
+        wait_random(8, 12)
+        return True
 
-# FIXED: Ensure login before each report access
+def is_logged_in(page):
+    try:
+        page.wait_for_timeout(2000)
+        sign_in_elements = page.locator("button:has-text('Sign In')")
+        if sign_in_elements.count() > 0 and sign_in_elements.first.is_visible():
+            return False
+        return True
+    except:
+        return True
+
 def ensure_logged_in(page):
-    """Ensure user is logged in before accessing reports"""
     if not is_logged_in(page):
         print("Session lost, re-logging in...")
         return login_to_tekmetric(page)
     return True
 
-# FIXED: Better export button detection with login verification
-def find_export_button_robust(page):
-    """Enhanced export button detection with session validation"""
-    
-    # First verify we're logged in
-    if not ensure_logged_in(page):
-        print("Cannot proceed - login failed")
-        return None
-    
-    # Wait for page to be fully loaded
-    try:
-        page.wait_for_load_state("networkidle", timeout=20000)
-        wait_random(2, 4)
-    except:
-        print("Page loading timeout, continuing...")
-    
-    # Wait for any loading indicators to disappear
-    try:
-        page.wait_for_selector("[data-testid='loading'], .loading, .spinner", state="hidden", timeout=10000)
-    except:
-        pass
-    
-    # Primary export button selectors based on your working screenshots
-    export_selectors = [
+def find_export_button(page):
+    selectors = [
         "button:has-text('Export')",
-        "[data-cy='button']:has-text('Export')",
-        "button[aria-label*='Export']",
+        "[data-cy='button']:has-text('Export')", 
+        "button[class*='export' i]",
+        ".export-button",
+        "button:has-text('export')",
+        "span:has-text('Export')",
+        "[role='button']:has-text('Export')",
+        "button[type='button']:has-text('Export')",
         ".MuiButton-root:has-text('Export')",
-        "*[role='button']:has-text('Export')",
+        "[data-testid*='export']",
+        "button[aria-label*='Export']",
+        "*:has-text('Export'):visible",
+        "button.btn:has-text('Export')",
+        ".btn-primary:has-text('Export')",
         "input[value='Export']",
-        "button.btn:has-text('Export')"
+        "[title*='Export']"
     ]
     
-    # Try multiple attempts with increasing wait times
-    for attempt in range(3):
-        print(f"Export button search attempt {attempt + 1}/3...")
+    for attempt in range(6):
+        print(f"  Export button search attempt {attempt + 1}/6...")
+        wait_random(6, 10)
         
-        # Scroll to ensure button is visible
+        if not ensure_logged_in(page):
+            print("  Lost session during export search")
+            return None
+        
         try:
             page.evaluate("window.scrollTo(0, 0)")
-            wait_random(1, 2)
+            wait_random(2, 3)
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            wait_random(1, 2)
+            wait_random(2, 3)
+            page.evaluate("window.scrollTo(0, 0)")
+            wait_random(2, 3)
         except:
             pass
         
-        for selector in export_selectors:
+        for selector in selectors:
             try:
-                element = page.locator(selector).first
-                if element.is_visible(timeout=3000):
-                    print(f"Found Export button with: {selector}")
-                    return element
+                elements = page.locator(selector)
+                count = elements.count()
+                if count > 0:
+                    for i in range(count):
+                        element = elements.nth(i)
+                        if element.is_visible():
+                            print(f"  Found Export button with: {selector}")
+                            return element
             except:
                 continue
         
-        if attempt < 2:
-            wait_time = (attempt + 1) * 3
-            print(f"Export button not found, waiting {wait_time} seconds...")
-            wait_random(wait_time, wait_time + 2)
+        if attempt < 5:
+            print("  Export button not found, waiting longer...")
+            wait_random(8, 12)
     
-    print("Export button not found after all attempts")
+    try:
+        all_buttons = page.locator("button, input[type='button'], [role='button']")
+        button_count = all_buttons.count()
+        print(f"  DEBUG: Found {button_count} total buttons on page")
+        for i in range(min(button_count, 10)):
+            try:
+                button_text = all_buttons.nth(i).text_content()
+                print(f"    Button {i+1}: '{button_text}'")
+            except:
+                pass
+    except:
+        pass
+    
     return None
 
-# FIXED: Simplified financial report download
-def download_financial_report(page, dirs, dates):
-    """Download financial report with better session management"""
+def download_financial_csv(page, filename, download_dir):
     try:
-        print("Downloading Financial Report...")
-        
-        # Ensure we're logged in
         if not ensure_logged_in(page):
-            raise Exception("Login failed before financial report")
+            print("Session check failed before financial download")
+            return False
         
-        # Navigate to financial reports page first (not direct to custom URL)
-        print("Navigating to Financial Reports...")
-        page.goto("https://shop.tekmetric.com/admin/org/464/reports/financial", timeout=60000)
-        page.wait_for_load_state("networkidle", timeout=30000)
-        wait_random(3, 5)
+        print("Looking for Export button...")
+        print("Waiting for page to fully load...")
         
-        # Check if we're still logged in after navigation
-        if not is_logged_in(page):
-            raise Exception("Lost session after navigating to financial reports")
+        wait_random(12, 18)
         
-        # Click on Custom Financial Report
         try:
-            custom_btn = page.locator("text=Custom Financial").first
-            if custom_btn.is_visible(timeout=10000):
-                custom_btn.click()
-                wait_random(3, 5)
-            else:
-                print("Custom Financial button not found, trying direct approach...")
-        except Exception as e:
-            print(f"Custom button click failed: {e}")
+            page.wait_for_load_state("networkidle", timeout=30000)
+            wait_random(5, 8)
+        except:
+            print("  NetworkIdle timeout, continuing...")
         
-        # Set date range to today
         try:
-            # Look for date controls and set them appropriately
-            today = dates['target_date']
-            date_str = today.strftime("%m/%d/%Y")
-            
-            # Try to set date inputs if available
-            date_inputs = page.locator("input[type='date'], input[placeholder*='date']")
-            count = date_inputs.count()
-            if count > 0:
-                for i in range(min(count, 2)):  # Set start and end date
-                    date_inputs.nth(i).fill(date_str)
-                    wait_random(1, 2)
-        except Exception as e:
-            print(f"Date setting failed: {e}")
+            page.wait_for_selector("[data-testid='loading'], .loading, .spinner", state="hidden", timeout=20000)
+            print("  Loading indicators cleared")
+            wait_random(3, 5)
+        except:
+            print("  No loading indicators found")
         
-        # Find and click export button
-        export_btn = find_export_button_robust(page)
+        try:
+            page.wait_for_selector("table, .data-table, .report-table", timeout=15000)
+            print("  Data table detected")
+            wait_random(4, 6)
+        except:
+            print("  No data table detected")
+        
+        try:
+            screenshot_path = f"/app/debug_financial_page.png"
+            page.screenshot(path=screenshot_path)
+            print(f"  Debug screenshot saved: {screenshot_path}")
+        except:
+            pass
+        
+        export_btn = find_export_button(page)
         if not export_btn:
-            raise Exception("Export button not found")
+            print("Export button not found after all attempts")
+            return False
         
-        print("Clicking Export button...")
+        print("Found Export button, clicking...")
         
-        # Setup download handler
-        az_time = get_arizona_time()
-        filename = f"{dates['target_file']}_H{az_time.hour:02d}.csv"
-        
-        with page.expect_download(timeout=60000) as download_info:
+        with page.expect_download(timeout=90000) as download_info:
             export_btn.click()
-            wait_random(2, 4)
+            wait_random(5, 8)
             
-            # Look for CSV format option
+            print("Looking for CSV option...")
+            csv_btn = page.locator("text=CSV").first
             try:
-                csv_option = page.locator("text=CSV, button:has-text('CSV')").first
-                if csv_option.is_visible(timeout=5000):
-                    csv_option.click()
-                    print("Selected CSV format")
+                csv_btn.wait_for(state="visible", timeout=15000)
+                csv_btn.click()
+                print("CSV option clicked")
+                wait_random(3, 5)
             except:
-                print("CSV option not found, using default")
+                print("CSV option not found, using default download")
         
-        # Save the download
         download = download_info.value
-        file_path = os.path.join(dirs["financial"], filename)
+        file_path = os.path.join(download_dir, filename)
         download.save_as(file_path)
         
-        # Verify download
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 100:  # More than just headers
-            print(f"Successfully downloaded: {filename} ({os.path.getsize(file_path)} bytes)")
-            process_financial_report(filename, dates['current_hour'])
+        if os.path.exists(file_path) and os.path.getsize(file_path) >= 100:
+            print(f"Downloaded: {filename} ({os.path.getsize(file_path)} bytes)")
             return True
-        else:
-            raise Exception("Downloaded file is empty or too small")
+        
+        return False
         
     except Exception as e:
-        print(f"Financial report error: {e}")
-        # Create empty file as fallback
-        az_time = get_arizona_time()
-        filename = f"{dates['target_file']}_H{az_time.hour:02d}.csv"
-        create_empty_financial_csv(filename, dirs["financial"], dates['target_us'], dates['current_hour'])
-        process_financial_report(filename, dates['current_hour'])
+        print(f"Download error: {e}")
         return False
 
-# FIXED: Simplified RO report download  
-def download_ro_reports(page, dirs, dates):
-    """Download RO reports with better session management"""
+def download_ro_csv(page, filename, download_dir):
     try:
-        print("Downloading RO Marketing Reports...")
+        if not ensure_logged_in(page):
+            print("Session check failed before RO download")
+            return False
         
-        locations = [
-            {"name": "Mesa Broadway", "shop_id": "10738"},
-            {"name": "Mesa Guadalupe", "shop_id": "11965"}, 
-            {"name": "Phoenix", "shop_id": "10171"},
-            {"name": "Tempe", "shop_id": "5566"},
-            {"name": "Sun City West", "shop_id": "13513"},
-            {"name": "Surprise", "shop_id": "13512"}
-        ]
+        print("Looking for Export button...")
+        print("Waiting for RO page to fully load...")
+        wait_random(5, 8)
         
-        success_count = 0
-        az_time = get_arizona_time()
+        try:
+            page.wait_for_selector("[data-testid='loading'], .loading, .spinner", state="hidden", timeout=12000)
+            wait_random(3, 5)
+        except:
+            pass
         
-        for location in locations:
-            try:
-                print(f"Processing {location['name']}...")
-                
-                # Ensure logged in before each location
-                if not ensure_logged_in(page):
-                    raise Exception(f"Login failed for {location['name']}")
-                
-                # Navigate to RO Marketing page first
-                print(f"Navigating to RO Marketing for {location['name']}...")
-                page.goto("https://shop.tekmetric.com/admin/org/464/reports/customer/ro-marketing-source", timeout=60000)
-                page.wait_for_load_state("networkidle", timeout=30000)
-                wait_random(3, 5)
-                
-                # Check session after navigation
-                if not is_logged_in(page):
-                    raise Exception(f"Lost session for {location['name']}")
-                
-                # Set shop filter
-                try:
-                    # Look for shop selection dropdown/checkboxes
-                    shop_elements = page.locator(f"text={location['name']}, [value='{location['shop_id']}']")
-                    if shop_elements.count() > 0:
-                        shop_elements.first.click()
-                        wait_random(2, 3)
-                except Exception as e:
-                    print(f"Shop selection failed for {location['name']}: {e}")
-                
-                # Set date to today
-                try:
-                    today = dates['target_date']
-                    date_str = today.strftime("%m/%d/%Y")
-                    
-                    # Set date range
-                    date_inputs = page.locator("input[type='date'], input[placeholder*='date']")
-                    count = date_inputs.count()
-                    if count > 0:
-                        for i in range(min(count, 2)):
-                            date_inputs.nth(i).fill(date_str)
-                            wait_random(1, 2)
-                except Exception as e:
-                    print(f"Date setting failed for {location['name']}: {e}")
-                
-                # Find export button
-                export_btn = find_export_button_robust(page)
-                if not export_btn:
-                    raise Exception("Export button not found")
-                
-                # Download
-                filename = f"{location['name'].replace(' ', '-')}-{dates['target_short']}_H{az_time.hour:02d}.csv"
-                
-                with page.expect_download(timeout=60000) as download_info:
-                    export_btn.click()
-                    wait_random(2, 4)
-                
-                download = download_info.value
-                file_path = os.path.join(dirs["ro"], filename)
-                download.save_as(file_path)
-                
-                # Verify download
-                if os.path.exists(file_path) and os.path.getsize(file_path) > 50:
-                    print(f"Successfully downloaded: {filename}")
-                    process_ro_marketing_report(location['name'], filename, dates['current_hour'])
-                    success_count += 1
-                else:
-                    raise Exception("Downloaded file is empty")
-                
-                wait_random(2, 4)
-                
-            except Exception as e:
-                print(f"Error with {location['name']}: {e}")
-                # Create empty file
-                filename = f"{location['name'].replace(' ', '-')}-{dates['target_short']}_H{az_time.hour:02d}.csv"
-                create_empty_csv(filename, dirs["ro"], location['name'], dates['target_us'], dates['current_hour'])
-                process_ro_marketing_report(location['name'], filename, dates['current_hour'])
-                success_count += 1
+        export_btn = find_export_button(page)
+        if not export_btn:
+            print("Export button not found after all attempts")
+            return False
         
-        print(f"RO processing completed: {success_count}/6")
-        return success_count >= 4
+        print("Found Export button, clicking...")
+        
+        with page.expect_download(timeout=90000) as download_info:
+            export_btn.click()
+            wait_random(4, 6)
+        
+        download = download_info.value
+        file_path = os.path.join(download_dir, filename)
+        download.save_as(file_path)
+        
+        if os.path.exists(file_path) and os.path.getsize(file_path) >= 50:
+            print(f"Downloaded: {filename} ({os.path.getsize(file_path)} bytes)")
+            return True
+        
+        return False
         
     except Exception as e:
-        print(f"RO reports error: {e}")
+        print(f"Download error: {e}")
         return False
 
-# Keep existing empty file creation functions
 def create_empty_financial_csv(filename, directory, report_date, created_at):
     try:
         file_path = os.path.join(directory, filename)
@@ -449,62 +323,212 @@ def create_empty_csv(filename, directory, location_name, report_date, created_at
         print(f"Error creating empty file: {e}")
         return False
 
-# FIXED: Main function with better error handling
+def login_to_tekmetric(page):
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"Login attempt {attempt + 1}/{max_retries}...")
+            
+            page.goto("https://shop.tekmetric.com/", timeout=60000)
+            page.wait_for_timeout(3000)
+            
+            if is_logged_in(page):
+                print("Already logged in")
+                return True
+            
+            page.wait_for_load_state("networkidle", timeout=60000)
+            page.wait_for_timeout(3000)
+            
+            email = os.getenv("TEKMETRIC_EMAIL")
+            password = os.getenv("TEKMETRIC_PASSWORD")
+            
+            if not email or not password:
+                raise ValueError("TEKMETRIC_EMAIL and TEKMETRIC_PASSWORD must be set")
+            
+            page.fill("#email", email)
+            page.wait_for_timeout(2000)
+            page.fill("#password", password)
+            page.wait_for_timeout(2000)
+            
+            page.click("button[data-cy='button']:has-text('Sign In')")
+            page.wait_for_timeout(8000)
+            
+            if is_logged_in(page):
+                print("Login completed")
+                return True
+            else:
+                print(f"Login verification failed on attempt {attempt + 1}")
+                
+        except Exception as e:
+            print(f"Login attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                page.wait_for_timeout(5000)
+    
+    return False
+
+def download_financial_report(page, dirs, dates):
+    try:
+        print("Downloading Financial Report...")
+        
+        if not ensure_logged_in(page):
+            raise Exception("Login verification failed before financial report")
+        
+        financial_url = build_financial_url(dates['yesterday_date'])
+        print(f"Going to: {financial_url}")
+        
+        page.goto(financial_url, timeout=90000)
+        simple_page_wait(page)
+        wait_random(5, 8)
+        
+        if not is_logged_in(page):
+            print("Lost session after navigation, re-logging...")
+            if not login_to_tekmetric(page):
+                raise Exception("Re-login failed")
+            page.goto(financial_url, timeout=90000)
+            simple_page_wait(page)
+        
+        az_time = get_arizona_time()
+        filename = f"{dates['yesterday_file']}_H{az_time.hour:02d}.csv"
+        success = download_financial_csv(page, filename, dirs["financial"])
+        
+        if success:
+            print("Processing financial report...")
+            process_financial_report(filename, dates['current_hour'])
+            print("Financial report processed successfully")
+        else:
+            print("Financial report download failed, creating empty file with zero data...")
+            create_empty_financial_csv(filename, dirs["financial"], dates['yesterday_us'], dates['current_hour'])
+            print("Processing empty financial report...")
+            process_financial_report(filename, dates['current_hour'])
+            print("Empty financial report processed successfully")
+            success = True
+        
+        return success
+        
+    except Exception as e:
+        print(f"Financial report error: {e}")
+        try:
+            az_time = get_arizona_time()
+            filename = f"{dates['yesterday_file']}_H{az_time.hour:02d}.csv"
+            create_empty_financial_csv(filename, dirs["financial"], dates['yesterday_us'], dates['current_hour'])
+            process_financial_report(filename, dates['current_hour'])
+            print("Created and processed empty financial file after error")
+            return True
+        except:
+            return False
+
+def download_ro_reports(page, dirs, dates):
+    try:
+        print("Downloading RO Marketing Reports...")
+        
+        locations = [
+            {"name": "Mesa Broadway", "shop_id": "10738"},
+            {"name": "Mesa Guadalupe", "shop_id": "11965"},
+            {"name": "Phoenix", "shop_id": "10171"},
+            {"name": "Tempe", "shop_id": "5566"},
+            {"name": "Sun City West", "shop_id": "13513"},
+            {"name": "Surprise", "shop_id": "13512"}
+        ]
+        
+        success_count = 0
+        az_time = get_arizona_time()
+        
+        for location in locations:
+            try:
+                print(f"Processing {location['name']}...")
+                
+                if not ensure_logged_in(page):
+                    raise Exception(f"Login verification failed for {location['name']}")
+                
+                url = build_ro_url(location['shop_id'], dates['yesterday_date'])
+                print(f"Going to: {url}")
+                
+                page.goto(url, timeout=90000)
+                simple_page_wait(page)
+                wait_random(4, 6)
+                
+                if not is_logged_in(page):
+                    print(f"Lost session for {location['name']}, re-logging...")
+                    if not login_to_tekmetric(page):
+                        raise Exception(f"Re-login failed for {location['name']}")
+                    page.goto(url, timeout=90000)
+                    simple_page_wait(page)
+                
+                filename = f"{location['name'].replace(' ', '-')}-{dates['yesterday_short']}_H{az_time.hour:02d}.csv"
+                
+                success = download_ro_csv(page, filename, dirs["ro"])
+                
+                if success:
+                    process_ro_marketing_report(location['name'], filename, dates['current_hour'])
+                    success_count += 1
+                    print(f"Successfully processed {location['name']}")
+                else:
+                    print(f"Download failed for {location['name']}, creating empty file")
+                    create_empty_csv(filename, dirs["ro"], location['name'], dates['yesterday_us'], dates['current_hour'])
+                    process_ro_marketing_report(location['name'], filename, dates['current_hour'])
+                    success_count += 1
+                
+                wait_random(4, 6)
+                
+            except Exception as e:
+                print(f"Error with {location['name']}: {e}")
+                filename = f"{location['name'].replace(' ', '-')}-{dates['yesterday_short']}_H{az_time.hour:02d}.csv"
+                create_empty_csv(filename, dirs["ro"], location['name'], dates['yesterday_us'], dates['current_hour'])
+                process_ro_marketing_report(location['name'], filename, dates['current_hour'])
+                success_count += 1
+        
+        print(f"RO processing completed: {success_count}/6")
+        return success_count >= 4
+        
+    except Exception as e:
+        print(f"RO reports error: {e}")
+        return False
+
 def main():
     print("Starting Tekmetric Hourly Automation...")
     
     dirs = setup_directories()
     dates = get_date_info()
     
-    print(f"Processing date: {dates['target_us']} at {dates['current_hour']}")
+    print(f"Processing date: {dates['yesterday_us']} (TODAY) at {dates['current_hour']}")
     
     with sync_playwright() as p:
         browser = None
         try:
-            # Enhanced browser configuration for server environment
             browser = p.chromium.launch(
                 headless=True,
                 args=[
-                    '--no-sandbox',
+                    '--no-sandbox', 
                     '--disable-dev-shm-usage',
                     '--disable-blink-features=AutomationControlled',
-                    '--disable-extensions',
-                    '--disable-plugins',
-                    '--disable-images',  # Faster loading
-                    '--disable-javascript-harmony',
-                    '--disable-web-security',
-                    '--allow-running-insecure-content'
+                    '--disable-extensions'
                 ]
             )
             
-            # Enhanced context for better session management
             context = browser.new_context(
                 accept_downloads=True,
                 viewport={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                ignore_https_errors=True
+                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
             
             page = context.new_page()
-            page.set_default_timeout(60000)
-            page.set_default_navigation_timeout(60000)
+            page.set_default_timeout(90000)
+            page.set_default_navigation_timeout(90000)
             
-            # Login
             if not login_to_tekmetric(page):
                 print("Login failed, aborting")
                 return False
             
-            # Download reports
             financial_success = download_financial_report(page, dirs, dates)
             ro_success = download_ro_reports(page, dirs, dates)
             
-            # Process reports
             if ro_success:
                 print("Combining RO reports...")
-                combine_ro_reports(dates['target_short'], dates['current_hour'])
+                combine_ro_reports(dates['yesterday_short'], dates['current_hour'])
             
             print("Verifying data...")
-            verify_data_accuracy(dates['target_file'], dates['target_short'], dates['current_hour'])
+            verify_data_accuracy(dates['yesterday_file'], dates['yesterday_short'], dates['current_hour'])
             
             print("Uploading to SQL...")
             upload_success = upload_all_reports(dates['current_hour'])
