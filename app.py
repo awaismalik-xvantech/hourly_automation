@@ -78,11 +78,10 @@ def simple_page_wait(page):
 
 def is_logged_in(page):
     try:
-        page.wait_for_timeout(2000)
-        sign_in_elements = page.locator("button:has-text('Sign In')")
-        if sign_in_elements.count() > 0 and sign_in_elements.first.is_visible():
-            return False
-        return True
+        page.wait_for_timeout(3000)
+        # Simple check - just look for sign in button
+        sign_in_count = page.locator("button:has-text('Sign In')").count()
+        return sign_in_count == 0
     except:
         return True
 
@@ -331,13 +330,13 @@ def login_to_tekmetric(page):
             print(f"Login attempt {attempt + 1}/{max_retries}...")
             
             page.goto("https://shop.tekmetric.com/", timeout=60000)
-            page.wait_for_timeout(3000)
+            page.wait_for_timeout(5000)
             
-            if is_logged_in(page):
-                print("Already logged in")
-                return True
+            try:
+                page.wait_for_load_state("networkidle", timeout=30000)
+            except:
+                print("NetworkIdle timeout, continuing...")
             
-            page.wait_for_load_state("networkidle", timeout=60000)
             page.wait_for_timeout(3000)
             
             email = os.getenv("TEKMETRIC_EMAIL")
@@ -346,25 +345,64 @@ def login_to_tekmetric(page):
             if not email or not password:
                 raise ValueError("TEKMETRIC_EMAIL and TEKMETRIC_PASSWORD must be set")
             
-            page.fill("#email", email)
-            page.wait_for_timeout(2000)
-            page.fill("#password", password)
-            page.wait_for_timeout(2000)
-            
-            page.click("button[data-cy='button']:has-text('Sign In')")
-            page.wait_for_timeout(8000)
-            
-            if is_logged_in(page):
-                print("Login completed")
-                return True
+            # Fill login form
+            email_input = page.locator("#email")
+            if email_input.count() > 0:
+                email_input.fill(email)
+                page.wait_for_timeout(2000)
             else:
-                print(f"Login verification failed on attempt {attempt + 1}")
+                print("Email input not found")
+                continue
+            
+            password_input = page.locator("#password") 
+            if password_input.count() > 0:
+                password_input.fill(password)
+                page.wait_for_timeout(2000)
+            else:
+                print("Password input not found")
+                continue
+            
+            # Click sign in
+            sign_in_btn = page.locator("button[data-cy='button']:has-text('Sign In')")
+            if sign_in_btn.count() > 0:
+                sign_in_btn.click()
+                print("Clicked sign in button")
+            else:
+                print("Sign in button not found")
+                continue
+            
+            # Wait longer for login to complete
+            page.wait_for_timeout(10000)
+            
+            # Simple verification - check if we're not on login page anymore
+            current_url = page.url
+            print(f"Current URL after login: {current_url}")
+            
+            if "login" not in current_url.lower() and "sign" not in current_url.lower():
+                print("Login completed - URL changed")
+                return True
+            
+            # Alternative check - look for dashboard elements
+            page.wait_for_timeout(3000)
+            dashboard_elements = page.locator("nav, .navbar, [data-testid], .dashboard").count()
+            if dashboard_elements > 0:
+                print(f"Login completed - found {dashboard_elements} dashboard elements")
+                return True
+            
+            # Final fallback - if no sign in button visible, assume logged in
+            sign_in_visible = page.locator("button:has-text('Sign In')").count()
+            if sign_in_visible == 0:
+                print("Login completed - no sign in button visible")
+                return True
+            
+            print(f"Login verification failed on attempt {attempt + 1}")
                 
         except Exception as e:
             print(f"Login attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
                 page.wait_for_timeout(5000)
     
+    print("All login attempts failed")
     return False
 
 def download_financial_report(page, dirs, dates):
