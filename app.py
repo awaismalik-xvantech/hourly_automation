@@ -323,179 +323,91 @@ def create_empty_csv(filename, directory, location_name, report_date, created_at
         return False
 
 def login_to_tekmetric(page):
-    max_retries = 3
+    print("DEBUG: Starting login function")
     
-    for attempt in range(max_retries):
-        try:
-            print(f"=== DEBUG: Login attempt {attempt + 1}/{max_retries} ===")
-            
-            # Check environment variables first
-            email = os.getenv("TEKMETRIC_EMAIL")
-            password = os.getenv("TEKMETRIC_PASSWORD")
-            
-            print(f"DEBUG: Email env var exists: {email is not None}")
-            print(f"DEBUG: Password env var exists: {password is not None}")
-            
-            if not email or not password:
-                print("ERROR: Missing environment variables")
-                print(f"TEKMETRIC_EMAIL: {'SET' if email else 'NOT SET'}")
-                print(f"TEKMETRIC_PASSWORD: {'SET' if password else 'NOT SET'}")
-                return False
-            
-            print("DEBUG: Going to Tekmetric website...")
-            try:
-                page.goto("https://shop.tekmetric.com/", timeout=60000)
-                print("DEBUG: Page loaded successfully")
-            except Exception as e:
-                print(f"ERROR: Failed to load page: {e}")
-                continue
-            
-            print("DEBUG: Waiting 5 seconds...")
-            page.wait_for_timeout(5000)
-            
-            print("DEBUG: Checking current URL...")
-            current_url = page.url
-            print(f"DEBUG: Current URL: {current_url}")
-            
-            print("DEBUG: Taking screenshot...")
-            try:
-                page.screenshot(path="/app/debug_login_page.png")
-                print("DEBUG: Screenshot saved")
-            except Exception as e:
-                print(f"DEBUG: Screenshot failed: {e}")
-            
-            print("DEBUG: Looking for email input...")
-            try:
-                email_input = page.locator("#email")
-                email_count = email_input.count()
-                print(f"DEBUG: Found {email_count} email inputs")
-                
-                if email_count > 0:
-                    email_input.fill(email)
-                    print("DEBUG: Email filled")
-                    page.wait_for_timeout(2000)
-                else:
-                    print("ERROR: No email input found")
-                    # Try alternative selectors
-                    alt_selectors = ["input[type='email']", "input[name='email']", "[placeholder*='email' i]"]
-                    for selector in alt_selectors:
-                        try:
-                            alt_input = page.locator(selector)
-                            if alt_input.count() > 0:
-                                print(f"DEBUG: Found email input with: {selector}")
-                                alt_input.fill(email)
-                                print("DEBUG: Email filled with alternative selector")
-                                break
-                        except:
-                            continue
-                    else:
-                        print("ERROR: No email input found with any selector")
-                        continue
-            except Exception as e:
-                print(f"ERROR: Email input error: {e}")
-                continue
-            
-            print("DEBUG: Looking for password input...")
-            try:
-                password_input = page.locator("#password")
-                password_count = password_input.count()
-                print(f"DEBUG: Found {password_count} password inputs")
-                
-                if password_count > 0:
-                    password_input.fill(password)
-                    print("DEBUG: Password filled")
-                    page.wait_for_timeout(2000)
-                else:
-                    print("ERROR: No password input found")
-                    continue
-            except Exception as e:
-                print(f"ERROR: Password input error: {e}")
-                continue
-            
-            print("DEBUG: Looking for sign in button...")
-            try:
-                sign_in_btn = page.locator("button[data-cy='button']:has-text('Sign In')")
-                sign_in_count = sign_in_btn.count()
-                print(f"DEBUG: Found {sign_in_count} sign in buttons")
-                
-                if sign_in_count > 0:
-                    print("DEBUG: Clicking sign in button...")
-                    sign_in_btn.click()
-                    print("DEBUG: Sign in button clicked")
-                else:
-                    print("ERROR: No sign in button found")
-                    # Try alternative selectors
-                    alt_buttons = ["button:has-text('Sign In')", "input[type='submit']", "[type='submit']"]
-                    for selector in alt_buttons:
-                        try:
-                            alt_btn = page.locator(selector)
-                            if alt_btn.count() > 0:
-                                print(f"DEBUG: Found sign in button with: {selector}")
-                                alt_btn.click()
-                                print("DEBUG: Sign in clicked with alternative selector")
-                                break
-                        except:
-                            continue
-                    else:
-                        print("ERROR: No sign in button found with any selector")
-                        continue
-            except Exception as e:
-                print(f"ERROR: Sign in button error: {e}")
-                continue
-            
-            print("DEBUG: Waiting 10 seconds for login to complete...")
+    email = os.getenv("TEKMETRIC_EMAIL")
+    password = os.getenv("TEKMETRIC_PASSWORD")
+    
+    print(f"DEBUG: Email set: {email is not None}")
+    print(f"DEBUG: Password set: {password is not None}")
+    
+    if not email or not password:
+        print("ERROR: Missing credentials")
+        return False
+    
+    try:
+        print("DEBUG: Going to Tekmetric...")
+        page.goto("https://shop.tekmetric.com/", timeout=60000)
+        print("DEBUG: Page loaded")
+        
+        page.wait_for_timeout(5000)
+        print("DEBUG: Waited 5 seconds")
+        
+        # Check what we see on the page
+        print(f"DEBUG: Current URL: {page.url}")
+        
+        # Try to fill email
+        print("DEBUG: Looking for email input...")
+        email_inputs = page.locator("input[type='email'], #email, input[name='email']")
+        print(f"DEBUG: Found {email_inputs.count()} email inputs")
+        
+        if email_inputs.count() > 0:
+            email_inputs.first.fill(email)
+            print("DEBUG: Email filled")
+            page.wait_for_timeout(2000)
+        else:
+            print("ERROR: No email input found")
+            return False
+        
+        # Try to fill password
+        print("DEBUG: Looking for password input...")
+        password_inputs = page.locator("input[type='password'], #password, input[name='password']")
+        print(f"DEBUG: Found {password_inputs.count()} password inputs")
+        
+        if password_inputs.count() > 0:
+            password_inputs.first.fill(password)
+            print("DEBUG: Password filled")
+            page.wait_for_timeout(2000)
+        else:
+            print("ERROR: No password input found")
+            return False
+        
+        # Try to click sign in
+        print("DEBUG: Looking for sign in button...")
+        sign_in_buttons = page.locator("button:has-text('SIGN IN'), button:has-text('Sign In'), input[type='submit']")
+        print(f"DEBUG: Found {sign_in_buttons.count()} sign in buttons")
+        
+        if sign_in_buttons.count() > 0:
+            print("DEBUG: Clicking sign in...")
+            sign_in_buttons.first.click()
+            print("DEBUG: Sign in clicked")
             page.wait_for_timeout(10000)
-            
-            print("DEBUG: Checking login result...")
-            current_url_after = page.url
-            print(f"DEBUG: URL after login: {current_url_after}")
-            
-            # Take another screenshot
-            try:
-                page.screenshot(path="/app/debug_after_login.png")
-                print("DEBUG: After-login screenshot saved")
-            except:
-                pass
-            
-            # Check if URL changed (good sign)
-            if current_url != current_url_after:
-                print("DEBUG: URL changed - likely successful login")
-                return True
-            
-            # Check for sign in button (bad sign)
-            try:
-                sign_in_visible = page.locator("button:has-text('Sign In')").count()
-                print(f"DEBUG: Sign in buttons still visible: {sign_in_visible}")
-                if sign_in_visible == 0:
-                    print("DEBUG: No sign in button visible - assuming logged in")
-                    return True
-            except Exception as e:
-                print(f"DEBUG: Sign in check error: {e}")
-            
-            # Check for dashboard elements
-            try:
-                dashboard_elements = page.locator("nav, .navbar, [data-testid]").count()
-                print(f"DEBUG: Dashboard elements found: {dashboard_elements}")
-                if dashboard_elements > 0:
-                    print("DEBUG: Dashboard elements found - assuming logged in")
-                    return True
-            except Exception as e:
-                print(f"DEBUG: Dashboard check error: {e}")
-            
-            print(f"DEBUG: Login verification failed on attempt {attempt + 1}")
-                
-        except Exception as e:
-            print(f"ERROR: Login attempt {attempt + 1} completely failed: {e}")
-            import traceback
-            print("ERROR: Full traceback:")
-            traceback.print_exc()
-            
-        if attempt < max_retries - 1:
-            print("DEBUG: Waiting 5 seconds before retry...")
-            page.wait_for_timeout(5000)
-    
-    print("ERROR: All login attempts failed")
-    return False
+        else:
+            print("ERROR: No sign in button found")
+            return False
+        
+        # Check result
+        new_url = page.url
+        print(f"DEBUG: URL after login: {new_url}")
+        
+        if "login" not in new_url.lower():
+            print("DEBUG: Login successful - URL changed")
+            return True
+        
+        # Check for sign in button still visible
+        still_sign_in = page.locator("button:has-text('SIGN IN'), button:has-text('Sign In')").count()
+        print(f"DEBUG: Sign in buttons still visible: {still_sign_in}")
+        
+        if still_sign_in == 0:
+            print("DEBUG: Login successful - no sign in button visible")
+            return True
+        
+        print("DEBUG: Login failed - still on login page")
+        return False
+        
+    except Exception as e:
+        print(f"ERROR: Login exception: {e}")
+        return False
 
 def download_financial_report(page, dirs, dates):
     try:
