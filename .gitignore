@@ -48,6 +48,5 @@ RO Reports/*.csv
 *.png
 error_screenshot.png
 
-
 # Docker
 .dockerignore

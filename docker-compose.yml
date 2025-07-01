@@ -10,12 +10,13 @@ services:
     environment:
       - TZ=America/Phoenix
       - PYTHONUNBUFFERED=1
-      - TEKMETRIC_EMAIL=${TEKMETRIC_EMAIL:-arslan.thaheem@xvantech.com}
-      - TEKMETRIC_PASSWORD=${TEKMETRIC_PASSWORD:-$$xat123!@#}
+      # SECURITY FIX: Remove default values - these MUST be set in .env file
+      - TEKMETRIC_EMAIL=${TEKMETRIC_EMAIL}
+      - TEKMETRIC_PASSWORD=${TEKMETRIC_PASSWORD}
       - SQL_SERVER=${SQL_SERVER:-gembadb.database.windows.net}
       - SQL_DATABASE=${SQL_DATABASE:-gemba}
       - SQL_USERNAME=${SQL_USERNAME:-gembauser}
-      - SQL_PASSWORD=${SQL_PASSWORD:-Karachi%007}
+      - SQL_PASSWORD=${SQL_PASSWORD}
       - SQL_PORT=${SQL_PORT:-1433}
     volumes:
       - ./Financial Reports:/app/Financial Reports
@@ -23,6 +24,7 @@ services:
       - ./logs:/app/logs
     networks:
       - tekmetric-hourly-network
+    # Enhanced health check
     healthcheck:
       test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/app.py') else 1)"]
       interval: 300s
@@ -34,6 +36,15 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
+    # Resource limits for Azure server
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
 
 networks:
   tekmetric-hourly-network:
