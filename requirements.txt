@@ -1,5 +1,8 @@
 # Python 3.10 compatible
 
+# Environment variable loading
+python-dotenv
+
 # Web automation and scraping
 playwright
 
