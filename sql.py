@@ -15,7 +15,7 @@ def get_arizona_time():
     return datetime.datetime.now(pytz.timezone('US/Arizona'))
 
 def get_yesterday():
-    return get_arizona_time()  # Changed from yesterday to today
+    return get_arizona_time()
 
 def format_date(dt):
     return f"{dt.month}.{dt.day}.{dt.year}"
@@ -72,13 +72,36 @@ def read_csv_data(filepath):
         return None, None
 
 def sanitize_headers(headers):
+    """Fixed version that handles duplicate column names properly"""
     clean_headers = []
-    for header in headers:
+    seen_headers = {}
+    
+    for i, header in enumerate(headers):
+        # Basic cleaning
         clean = header.replace(' ', '_').replace('%', 'Percent').replace('$', 'Dollar')
         clean = ''.join(c for c in clean if c.isalnum() or c == '_')
-        if clean and clean[0].isdigit():
-            clean = f"Col_{clean}"
-        clean_headers.append(clean or "Unknown_Column")
+        
+        # Handle empty or invalid headers
+        if not clean or clean[0].isdigit():
+            clean = f"Column_{i+1}"
+        
+        # Handle duplicates by adding a number suffix
+        if clean in seen_headers:
+            seen_headers[clean] += 1
+            clean = f"{clean}_{seen_headers[clean]}"
+        else:
+            seen_headers[clean] = 0
+        
+        clean_headers.append(clean)
+    
+    print(f"Sanitized headers: {len(clean_headers)} unique columns")
+    
+    # Debug: show any duplicates that were fixed
+    original_count = len(headers)
+    unique_count = len(set(clean_headers))
+    if original_count != unique_count:
+        print(f"⚠️  Fixed {original_count - unique_count} duplicate column names")
+    
     return clean_headers
 
 def table_exists(conn, table_name):
@@ -118,26 +141,38 @@ def get_table_columns(conn, table_name):
         return []
 
 def add_missing_columns(conn, table_name, headers):
+    """Fixed version that handles column name conflicts properly"""
     try:
         existing_columns = get_table_columns(conn, table_name)
         cursor = conn.cursor()
         
+        added_count = 0
         for header in headers:
             if header not in existing_columns:
                 try:
                     alter_query = f"ALTER TABLE [{table_name}] ADD [{header}] NVARCHAR(255)"
                     cursor.execute(alter_query)
+                    added_count += 1
                     print(f"Added column [{header}] to table {table_name}")
                 except Exception as e:
-                    print(f"Could not add column [{header}]: {e}")
+                    # Skip columns that cause conflicts
+                    if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+                        print(f"Skipped duplicate column [{header}]")
+                    else:
+                        print(f"Could not add column [{header}]: {e}")
         
         conn.commit()
+        
+        if added_count > 0:
+            print(f"Successfully added {added_count} new columns to {table_name}")
+        
         return True
     except Exception as e:
         print(f"Error adding columns: {e}")
         return False
 
 def upsert_data_with_created_at(conn, table_name, headers, data, key_columns):
+    """Fixed version that handles column conflicts properly"""
     try:
         if not add_missing_columns(conn, table_name, headers):
             print("Warning: Could not add all missing columns")
@@ -149,17 +184,33 @@ def upsert_data_with_created_at(conn, table_name, headers, data, key_columns):
             print(f"No valid columns found for table {table_name}")
             return False
         
+        # Remove duplicates from valid_headers while preserving order
+        seen = set()
+        unique_valid_headers = []
+        for h in valid_headers:
+            if h not in seen:
+                seen.add(h)
+                unique_valid_headers.append(h)
+        
+        valid_headers = unique_valid_headers
+        print(f"Using {len(valid_headers)} valid unique columns for {table_name}")
+        
         cursor = conn.cursor()
         
         for row in data:
+            # Ensure row has enough values
             while len(row) < len(headers):
                 row.append('')
             row = row[:len(headers)]
             
+            # Create valid row data matching valid headers
             valid_row = []
-            for i, header in enumerate(headers):
-                if header in valid_headers:
-                    valid_row.append(row[i] if i < len(row) else '')
+            for header in valid_headers:
+                if header in headers:
+                    header_index = headers.index(header)
+                    valid_row.append(row[header_index] if header_index < len(row) else '')
+                else:
+                    valid_row.append('')
             
             # Check if record exists based on key columns
             if key_columns:
@@ -167,9 +218,10 @@ def upsert_data_with_created_at(conn, table_name, headers, data, key_columns):
                 where_values = []
                 for key_col in key_columns:
                     if key_col in valid_headers:
-                        col_index = headers.index(key_col)
-                        where_parts.append(f"ISNULL([{key_col}], '') = ISNULL(%s, '')")
-                        where_values.append(row[col_index] if col_index < len(row) else '')
+                        col_index = headers.index(key_col) if key_col in headers else -1
+                        if col_index >= 0:
+                            where_parts.append(f"ISNULL([{key_col}], '') = ISNULL(%s, '')")
+                            where_values.append(row[col_index] if col_index < len(row) else '')
                 
                 if where_parts:
                     check_query = f"SELECT COUNT(*) FROM [{table_name}] WHERE {' AND '.join(where_parts)}"
@@ -177,13 +229,15 @@ def upsert_data_with_created_at(conn, table_name, headers, data, key_columns):
                     exists = cursor.fetchone()[0] > 0
                     
                     if exists:
-                        # Update existing record including Created_At
+                        # Update existing record
                         set_parts = []
                         update_values = []
-                        for i, header in enumerate(headers):
-                            if header not in key_columns and header in valid_headers:
-                                set_parts.append(f"[{header}] = %s")
-                                update_values.append(row[i] if i < len(row) else '')
+                        for header in valid_headers:
+                            if header not in key_columns:
+                                header_index = headers.index(header) if header in headers else -1
+                                if header_index >= 0:
+                                    set_parts.append(f"[{header}] = %s")
+                                    update_values.append(row[header_index] if header_index < len(row) else '')
                         
                         if set_parts:
                             update_query = f"UPDATE [{table_name}] SET {', '.join(set_parts)} WHERE {' AND '.join(where_parts)}"
@@ -212,10 +266,9 @@ def upload_financial_report(created_at_hour=None):
     try:
         print("Uploading Financial Report to custom_financials_2...")
         
-        today = get_yesterday()  # Function name kept for compatibility but now returns today
+        today = get_yesterday()
         today_file = format_date(today)
         
-        # Include hour in filename
         az_time = get_arizona_time()
         if not created_at_hour:
             created_at_hour = az_time.strftime("%I %p").lstrip('0')
@@ -233,19 +286,16 @@ def upload_financial_report(created_at_hour=None):
             return False
         
         try:
-            # Use new table name: custom_financials_2
             if not create_table(conn, 'custom_financials_2', headers):
                 return False
             
-            # Key columns include Created_At for more specific matching
             key_columns = ['Location', 'Report_Date']
             success = upsert_data_with_created_at(conn, 'custom_financials_2', headers, data, key_columns)
             
             if success:
-                # Log the Created_At information - FIXED: use today instead of yesterday
                 cursor = conn.cursor()
                 cursor.execute("SELECT DISTINCT Created_At FROM [custom_financials_2] WHERE Report_Date = %s", 
-                             (today.strftime("%m/%d/%Y"),))  # FIXED: changed from yesterday to today
+                             (today.strftime("%m/%d/%Y"),))
                 created_at_values = [row[0] for row in cursor.fetchall()]
                 print(f"Financial data uploaded with Created_At: {created_at_values}")
             
@@ -261,10 +311,9 @@ def upload_ro_reports(created_at_hour=None):
     try:
         print("Uploading RO Marketing Reports to ro_marketing_2...")
         
-        today = get_yesterday()  # Function name kept for compatibility but now returns today
+        today = get_yesterday()
         today_short = format_date_short(today)
         
-        # Include hour in filename
         az_time = get_arizona_time()
         if not created_at_hour:
             created_at_hour = az_time.strftime("%I %p").lstrip('0')
@@ -282,16 +331,13 @@ def upload_ro_reports(created_at_hour=None):
             return False
         
         try:
-            # Use new table name: ro_marketing_2
             if not create_table(conn, 'ro_marketing_2', headers):
                 return False
             
-            # Key columns for RO data
             key_columns = ['Marketing_Source', 'Location', 'Report_Date']
             success = upsert_data_with_created_at(conn, 'ro_marketing_2', headers, data, key_columns)
             
             if success:
-                # Log the Created_At and location information - FIXED: use today instead of yesterday
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT Location, COUNT(*) as RecordCount, MAX(Created_At) as LatestCreatedAt
@@ -299,7 +345,7 @@ def upload_ro_reports(created_at_hour=None):
                     WHERE Report_Date = %s 
                     GROUP BY Location
                     ORDER BY Location
-                """, (today.strftime("%m/%d/%Y"),))  # FIXED: changed from yesterday to today
+                """, (today.strftime("%m/%d/%Y"),))
                 
                 location_info = cursor.fetchall()
                 print(f"RO data uploaded for {len(location_info)} locations:")
@@ -335,10 +381,9 @@ def upload_all_reports(created_at_hour=None):
                 conn = create_connection()
                 if conn:
                     cursor = conn.cursor()
-                    today = get_yesterday()  # Function name kept for compatibility but now returns today
+                    today = get_yesterday()
                     today_formatted = today.strftime("%m/%d/%Y")
                     
-                    # Get count from both tables
                     cursor.execute("SELECT COUNT(*) FROM [custom_financials_2] WHERE Report_Date = %s AND Created_At = %s", 
                                  (today_formatted, created_at_hour))
                     financial_count = cursor.fetchone()[0]
