@@ -265,7 +265,7 @@ def combine_ro_reports(yesterday_short, created_at_hour=None):
         return None
 
 def verify_data_accuracy(financial_filename, ro_filename, created_at_hour=None):
-    """Verify data accuracy and completeness"""
+    """Verify data accuracy and completeness - FIXED VERSION for Hourly System"""
     try:
         # Set default created_at_hour if not provided
         if not created_at_hour:
@@ -288,56 +288,84 @@ def verify_data_accuracy(financial_filename, ro_filename, created_at_hour=None):
         ro_locations = set()
         created_at_records = 0
         
-        # Verify financial data
+        # Verify financial data - FIXED LOGIC (same as notifications.py)
         print("Checking Financial Report...")
         financial_rows = read_csv_safe(financial_path)
         if financial_rows:
             headers = financial_rows[0]
-            created_at_idx = headers.index('Created_At') if 'Created_At' in headers else -1
+            data_rows = financial_rows[1:]
             
-            for row in financial_rows[1:]:
-                if len(row) > 0 and row[0] == 'Car Count':
-                    for i in range(1, len(row) - 2):  # Exclude Report_Date and Created_At
-                        try:
-                            if row[i].strip() and row[i].strip() != '0':
-                                financial_car_count += int(float(row[i]))
-                        except:
-                            continue
-                    break
-                
-                # Check Created_At column
-                if created_at_idx >= 0 and len(row) > created_at_idx:
-                    if row[created_at_idx] == created_at_hour:
-                        created_at_records += 1
+            # Find the Car Count column index
+            car_count_col_idx = None
+            created_at_idx = None
+            
+            for i, header in enumerate(headers):
+                if 'Car Count' in str(header) or 'Car_Count' in str(header):
+                    car_count_col_idx = i
+                if 'Created_At' in str(header):
+                    created_at_idx = i
+            
+            if car_count_col_idx is not None:
+                # Look for TOTAL row (first row should be TOTAL)
+                for row in data_rows:
+                    if len(row) > car_count_col_idx:
+                        first_col = str(row[0]).strip()
+                        if first_col == 'TOTAL':
+                            try:
+                                financial_car_count = int(float(row[car_count_col_idx]))
+                                break
+                            except:
+                                continue
+            
+            # Check Created_At column
+            if created_at_idx is not None:
+                for row in data_rows:
+                    if len(row) > created_at_idx:
+                        if str(row[created_at_idx]).strip() == created_at_hour:
+                            created_at_records += 1
             
             print(f"  ✅ Financial file found and processed")
         else:
             print(f"  ❌ Financial file not found: {financial_path}")
         
-        # Verify RO data
+        # Verify RO data - FIXED LOGIC (same as notifications.py)
         print("Checking RO Report...")
         ro_rows = read_csv_safe(ro_path)
         if ro_rows:
             headers = ro_rows[0]
+            data_rows = ro_rows[1:]
+            
+            # Find the main RO Count column
             ro_count_idx = None
             location_idx = None
             
             for i, header in enumerate(headers):
-                if 'RO Count' in header:
+                header_str = str(header).strip()
+                # Look for exact "RO Count" column (not "New RO Count" or "Repeat RO Count")
+                if header_str == 'RO Count':
                     ro_count_idx = i
-                if 'Location' in header:
+                    break
+            
+            for i, header in enumerate(headers):
+                header_str = str(header).strip()
+                if 'Location' in header_str:
                     location_idx = i
+                    break
             
             if ro_count_idx is not None and location_idx is not None:
-                for row in ro_rows[1:]:
+                for row in data_rows:
                     if len(row) > max(ro_count_idx, location_idx):
                         try:
-                            if row[ro_count_idx].strip():
-                                ro_total_count += int(float(row[ro_count_idx]))
-                            if row[location_idx].strip():
-                                ro_locations.add(row[location_idx])
+                            ro_value = str(row[ro_count_idx]).strip()
+                            if ro_value and ro_value != '0' and ro_value != '':
+                                count = int(float(ro_value))
+                                ro_total_count += count
                         except:
                             continue
+                        
+                        # Track locations
+                        if row[location_idx] and str(row[location_idx]).strip():
+                            ro_locations.add(str(row[location_idx]).strip())
             
             print(f"  ✅ RO file found and processed")
         else:
@@ -369,6 +397,11 @@ def verify_data_accuracy(financial_filename, ro_filename, created_at_hour=None):
         
         if ro_total_count == 0:
             warnings.append("RO count is 0")
+        
+        # CRITICAL: Check if car count matches RO count
+        if financial_car_count != ro_total_count:
+            warnings.append(f"Data mismatch: Financial ({financial_car_count}) != RO ({ro_total_count})")
+            success = False
         
         if warnings:
             print("\n⚠️  WARNINGS:")
