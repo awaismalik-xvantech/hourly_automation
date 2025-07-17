@@ -385,6 +385,12 @@ def main():
     
     if not email or not password:
         print("\n❌ Credentials not loaded!")
+        # Send failure notification for missing credentials
+        try:
+            from notifications import send_hourly_automation_report
+            send_hourly_automation_report()
+        except Exception as e:
+            print(f"⚠️ Notification failed: {e}")
         return False
     
     dirs = setup_directories()
@@ -414,6 +420,12 @@ def main():
             print("\nSTEP 1: Authenticating...")
             if not session.login():
                 print("❌ Authentication failed")
+                # Send failure notification for login failure
+                try:
+                    from notifications import send_hourly_automation_report
+                    send_hourly_automation_report()
+                except Exception as e:
+                    print(f"⚠️ Notification failed: {e}")
                 return False
             
             print("\nSTEP 2: Downloading reports...")
@@ -437,10 +449,25 @@ def main():
                 print("⚠️  AUTOMATION COMPLETED WITH UPLOAD ERRORS")
             print("="*60)
             
+            # STEP 6: Send notification email after automation completes (success or failure)
+            print("\nSTEP 6: Sending hourly notification email...")
+            try:
+                from notifications import send_hourly_automation_report
+                send_hourly_automation_report()
+                print("✅ Hourly notification email sent")
+            except Exception as e:
+                print(f"⚠️ Notification failed: {e}")
+            
             return upload_success
             
         except Exception as e:
             print(f"\n❌ AUTOMATION FAILED: {e}")
+            # Send failure notification for general automation failure
+            try:
+                from notifications import send_hourly_automation_report
+                send_hourly_automation_report()
+            except Exception as e:
+                print(f"⚠️ Notification failed: {e}")
             return False
         finally:
             if browser:
