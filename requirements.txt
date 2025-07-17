@@ -14,3 +14,7 @@ pytz
 
 # Task scheduling (not used in hourly version but kept for compatibility)
 schedule
+
+openai 
+msal 
+requests
