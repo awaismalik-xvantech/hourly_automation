@@ -13,8 +13,8 @@ EMAIL_CONFIG = {
     'sender_email': os.getenv('SENDER_EMAIL', 'awais@xvantech.com'),
     'recipient_emails': [
         'awais@xvantech.com',
-        'humayun@xvantech.com'
-        #'maaz@xvantech.com'
+        'humayun@xvantech.com',
+        'maaz@xvantech.com'
     ],
     'authority': os.getenv('AUTHORITY', 'https://login.microsoftonline.com/xvantech.com')
 }
