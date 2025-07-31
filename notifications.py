@@ -283,7 +283,7 @@ def check_database_connectivity():
         }
 
 def generate_hourly_report_summary():
-    """Generate comprehensive hourly automation report"""
+    """Generate comprehensive hourly automation report - SIMPLIFIED VERSION"""
     current_time = get_arizona_time()
     hour_info = get_current_hour_info()
     
@@ -303,18 +303,17 @@ def generate_hourly_report_summary():
     # Check database
     db_status = check_database_connectivity()
     
-    # Determine overall status and capture specific errors
+    # Determine overall status and capture ONLY REAL CRITICAL errors
     overall_success = True
     issues = []
     login_status = "Unknown"
     
-    # PRIMARY CHECK: If NO files exist, it's definitely a login failure
+    # 1. PRIMARY CHECK: Login failure (NO files exist)
     if not file_status['financial_exists'] and not file_status['ro_exists']:
         login_status = "❌ Failed - Login timeout"
         overall_success = False
-        issues.append("Login failed: Timeout waiting for email input field (90000ms exceeded)")
+        issues.append("Login failed: Cannot access Tekmetric system")
         
-        # Don't check other things if login failed
         return {
             'overall_success': overall_success,
             'report_date': current_time.strftime('%m/%d/%Y'),
@@ -329,70 +328,43 @@ def generate_hourly_report_summary():
             'login_status': login_status
         }
     
-    # Login was successful if we have files
+    # 2. Login was successful if we have files
     login_status = "✅ Successful"
     
-    # File existence checks
-    if not file_status['financial_exists']:
-        overall_success = False
-        issues.append("Financial report file not found")
-    elif financial_analysis and not financial_analysis['success']:
-        overall_success = False
-        issues.append(f"Financial data analysis failed: {financial_analysis['error']}")
-    
-    if not file_status['ro_exists']:
-        overall_success = False
-        issues.append("RO report file not found")
-    elif ro_analysis and not ro_analysis['success']:
-        overall_success = False
-        issues.append(f"RO data analysis failed: {ro_analysis['error']}")
-    
-    # CRITICAL: Database connectivity is REQUIRED for success
+    # 3. CRITICAL: Database connectivity is REQUIRED for success
     if not db_status['success']:
         overall_success = False
         issues.append(f"Database connection failed: {db_status['message']}")
     
-    # Data validation checks
-    data_match = False
-    if financial_analysis and ro_analysis and financial_analysis['success'] and ro_analysis['success']:
+    # 4. File analysis failures (not file existence - that's checked by downloads)
+    if file_status['financial_exists'] and financial_analysis and not financial_analysis['success']:
+        overall_success = False
+        issues.append(f"Financial data analysis failed: {financial_analysis['error']}")
+    
+    if file_status['ro_exists'] and ro_analysis and not ro_analysis['success']:
+        overall_success = False
+        issues.append(f"RO data analysis failed: {ro_analysis['error']}")
+    
+    # 5. ONLY validate data IF both have actual data (not zero)
+    data_validation_performed = False
+    if (financial_analysis and financial_analysis['success'] and financial_analysis['car_count'] > 0 and
+        ro_analysis and ro_analysis['success'] and ro_analysis['total_ro_count'] > 0):
+        
+        data_validation_performed = True
         data_match = financial_analysis['car_count'] == ro_analysis['total_ro_count']
+        
         if not data_match:
             overall_success = False
             issues.append(f"Data mismatch: Financial car count ({financial_analysis['car_count']}) != RO count ({ro_analysis['total_ro_count']})")
-        
-        # Check for zero car count (data quality issue)
-        if financial_analysis['car_count'] == 0:
-            overall_success = False
-            issues.append("Financial car count is 0 - indicating data quality issue")
-        
-        # Check for zero RO count (data quality issue)
-        if ro_analysis['total_ro_count'] <= 1:  # Very low count indicates missing data
-            overall_success = False
-            issues.append("RO count is very low - indicating missing data from locations")
     
-    # Check if we have insufficient data (this detects missing downloads)
+    # 6. Check ONLY for missing locations (indicates real download failures)
     if financial_analysis and financial_analysis['success'] and financial_analysis['locations'] < 6:
         overall_success = False
-        issues.append(f"Missing financial data for locations - only {financial_analysis['locations']}/6 found")
+        issues.append(f"Financial download failure: only {financial_analysis['locations']}/6 locations found")
     
     if ro_analysis and ro_analysis['success'] and ro_analysis['locations'] < 6:
         overall_success = False
-        issues.append(f"Missing RO data for locations - only {ro_analysis['locations']}/6 found")
-    
-    # Check for small file sizes indicating download issues
-    if file_status['financial_exists'] and file_status['financial_size'] < 1000:
-        overall_success = False
-        issues.append("Financial file too small - possible download issue")
-    
-    if file_status['ro_exists'] and file_status['ro_size'] < 800:
-        overall_success = False
-        issues.append("RO file too small - likely missing data from failed downloads")
-    
-    # Detect specific download failures based on very low RO count
-    if (ro_analysis and ro_analysis['success'] and 
-        ro_analysis['total_ro_count'] < 10 and ro_analysis['locations'] == 6):
-        overall_success = False
-        issues.append("Export button not found - multiple locations failed to download")
+        issues.append(f"RO download failure: only {ro_analysis['locations']}/6 locations found")
     
     return {
         'overall_success': overall_success,
@@ -403,102 +375,55 @@ def generate_hourly_report_summary():
         'financial_analysis': financial_analysis,
         'ro_analysis': ro_analysis,
         'database_status': db_status,
-        'data_validation': data_match,
+        'data_validation': data_validation_performed,
         'issues': issues,
         'login_status': login_status
     }
 
 def create_hourly_email(report_data):
-    """Create simple success or critical failure alert email for hourly runs"""
+    """Create simple success or critical failure alert email for hourly runs - SIMPLIFIED"""
     try:
         hour_display = report_data['hour_info']['hour_12']
         
         if report_data['overall_success']:
-            # Simple success message with hour
+            # Simple success message
             return f"Hourly automation at {hour_display} was successful"
         else:
-            # Critical failure alert - focus only on urgent issues
+            # Critical failure alert - ONLY real issues
             alert_message = f"🚨 HOURLY AUTOMATION FAILED at {hour_display}\n\n"
             
-            # Check for login failure first (most critical)
-            login_failed = any("Login failed" in issue for issue in report_data['issues'])
-            
-            if login_failed:
-                alert_message += "❌ LOGIN SYSTEM FAILURE\n"
-                alert_message += "   • Timeout waiting for email input field (90000ms)\n"
-                alert_message += "   • Cannot access Tekmetric website\n"
-                alert_message += "   • Check internet connection and website status\n"
-                alert_message += "   • No data downloaded - complete automation failure\n"
-                return alert_message.strip()
-            
-            # Process other issues if login was successful
-            alert_issues = []
-            processed_types = set()  # Avoid duplicates
-            
+            # Only show REAL critical issues
             for issue in report_data['issues']:
-                if "Database connection failed" in issue and "database" not in processed_types:
-                    alert_issues.append("❌ SQL DATABASE UNREACHABLE")
-                    alert_issues.append("   • IP address blocked by Azure firewall")
-                    alert_issues.append("   • No data uploaded to custom_financials_2/ro_marketing_2")
-                    alert_issues.append("   • Contact Azure admin to whitelist IP")
-                    processed_types.add("database")
-                    
-                elif "Data mismatch" in issue and "data_mismatch" not in processed_types:
-                    alert_issues.append("❌ DATA VALIDATION FAILED")
-                    alert_issues.append(f"   • {issue}")
-                    alert_issues.append("   • Financial and RO counts don't match")
-                    processed_types.add("data_mismatch")
-                    
-                elif "Financial car count is 0" in issue and "financial_empty" not in processed_types:
-                    alert_issues.append("❌ FINANCIAL REPORT EMPTY")
-                    alert_issues.append("   • No car count data found")
-                    alert_issues.append("   • Check if report date has actual data")
-                    processed_types.add("financial_empty")
-                    
-                elif ("RO count is very low" in issue or "RO count is 0" in issue) and "ro_empty" not in processed_types:
-                    alert_issues.append("❌ RO REPORTS MOSTLY EMPTY")
-                    alert_issues.append("   • Very few repair orders found")
-                    alert_issues.append("   • Likely export button failures")
-                    processed_types.add("ro_empty")
-                    
-                elif "Export button not found" in issue and "export_failed" not in processed_types:
-                    alert_issues.append("❌ DOWNLOAD FAILURES")
-                    alert_issues.append("   • Export buttons missing on multiple pages")
-                    alert_issues.append("   • 3+ locations failed to download")
-                    alert_issues.append("   • Website may have changed layout")
-                    processed_types.add("export_failed")
-                    
-                elif ("file not found" in issue.lower() or "file too small" in issue.lower()) and "missing_files" not in processed_types:
-                    alert_issues.append("❌ INCOMPLETE DOWNLOADS")
-                    alert_issues.append("   • Some location files missing or too small")
-                    alert_issues.append("   • Empty records created as fallback")
-                    processed_types.add("missing_files")
-            
-            # Add specific issues we can detect from file analysis
-            if (report_data['financial_analysis'] and 
-                report_data['financial_analysis']['success'] and 
-                report_data['financial_analysis']['car_count'] == 0 and
-                "financial_empty" not in processed_types):
-                alert_issues.append("❌ FINANCIAL DATA ISSUE")
-                alert_issues.append("   • Car count = 0 (should be > 0)")
-                alert_issues.append("   • Data may be incomplete or filtered wrong")
-            
-            # Build final message
-            if alert_issues:
-                for issue in alert_issues:
-                    if issue.startswith("❌"):
-                        alert_message += f"\n{issue}\n"
-                    else:
-                        alert_message += f"{issue}\n"
-            else:
-                alert_message += "❌ UNKNOWN SYSTEM FAILURE\n"
-                alert_message += "   • Check logs for detailed error information\n"
+                if "Login failed" in issue:
+                    alert_message += "❌ LOGIN SYSTEM FAILURE\n"
+                    alert_message += "   • Cannot access Tekmetric website\n"
+                    alert_message += "   • Check internet connection and website status\n\n"
+                
+                elif "Database connection failed" in issue:
+                    alert_message += "❌ SQL DATABASE UNREACHABLE\n"
+                    alert_message += "   • Cannot upload data to database\n"
+                    alert_message += "   • Contact Azure admin to whitelist IP\n\n"
+                
+                elif "Data mismatch" in issue:
+                    alert_message += "❌ DATA VALIDATION FAILED\n"
+                    alert_message += f"   • {issue}\n"
+                    alert_message += "   • Check Excel files for accuracy\n\n"
+                
+                elif "download failure" in issue.lower():
+                    alert_message += "❌ DOWNLOAD FAILURES\n"
+                    alert_message += f"   • {issue}\n"
+                    alert_message += "   • Some locations did not download properly\n\n"
+                
+                elif "analysis failed" in issue.lower():
+                    alert_message += "❌ FILE PROCESSING ERROR\n"
+                    alert_message += f"   • {issue}\n"
+                    alert_message += "   • Check file format and content\n\n"
             
             return alert_message.strip()
             
     except Exception as e:
         # Fallback error message
-        return f"🚨 HOURLY AUTOMATION FAILED\n\n❌ SYSTEM ERROR\n   • {str(e)}\n   • Check system logs immediately"
+        return f"🚨 HOURLY AUTOMATION FAILED at {hour_display}\n\n❌ SYSTEM ERROR\n   • {str(e)}"
 
 def get_access_token():
     """Get Microsoft Graph access token"""
