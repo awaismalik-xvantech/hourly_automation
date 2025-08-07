@@ -4,10 +4,10 @@ import datetime
 import pytz
 
 SQL_CONFIG = {
-    'server': os.getenv('SQL_SERVER', 'gembadbsvr.database.windows.net'),
+    'server': os.getenv('SQL_SERVER', 'gembadb.database.windows.net'),
     'database': os.getenv('SQL_DATABASE', 'gemba'),
-    'username': os.getenv('SQL_USERNAME', 'gembadbuser'),
-    'password': os.getenv('SQL_PASSWORD', 'XiLNiFV2iWLEREFTXgam'),
+    'username': os.getenv('SQL_USERNAME', 'gembauser'),
+    'password': os.getenv('SQL_PASSWORD', 'Karachi%007'),
     'port': int(os.getenv('SQL_PORT', '1433'))
 }
 
