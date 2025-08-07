@@ -3,7 +3,7 @@ import datetime
 import pytz
 from app import main
 
-TARGET_MINUTE = 0  # Run at the top of each hour (XX:00)
+TARGET_MINUTE = 50  # Run at the top of each hour (XX:00)
 
 def get_arizona_time():
     """Get current Arizona time"""
