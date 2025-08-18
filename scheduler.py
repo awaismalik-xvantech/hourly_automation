@@ -115,13 +115,14 @@ def main_scheduler():
                 current_time.hour == 7 and 
                 current_time.minute == 0 and 
                 current_time.second < 30 and
-                last_fix_date != current_date  # Only once per day
+                last_fix_date != current_date
             )
             
             if should_run_fix:
                 print(f"\n🕖 Daily fix triggered at {current_time.strftime('%I:%M:%S %p')}")
                 success = run_daily_fix()
                 last_fix_date = current_date
+                
                 if success:
                     print(f"✅ Daily fix completed. Next fix: tomorrow at 7:00 AM")
                 else:
@@ -130,7 +131,7 @@ def main_scheduler():
             # Check if it's time for hourly run (:50 minutes)
             should_run = (
                 current_time.minute == TARGET_MINUTE and 
-                current_time.second < 30 and  # Run only in first 30 seconds of the minute
+                current_time.second < 30 and
                 (last_run_hour != current_hour or last_run_date != current_date)
             )
             
@@ -141,7 +142,6 @@ def main_scheduler():
                 last_run_hour = current_hour
                 last_run_date = current_date
                 
-                # Calculate next run
                 next_run = calculate_next_run(current_time)
                 
                 if success:
@@ -149,7 +149,7 @@ def main_scheduler():
                 else:
                     print(f"⚠️  Automation had errors. Next retry: {next_run.strftime('%I:%M %p')}")
             
-            # Status update every 10 minutes (but not during run minutes)
+            # Status update every 10 minutes
             elif (current_time.minute % 10 == 0 and 
                   current_time.minute != TARGET_MINUTE and 
                   current_time.minute != 0 and
@@ -165,7 +165,6 @@ def main_scheduler():
                     print(f"⏳ Waiting for next run: {next_run.strftime('%I:%M %p')} "
                           f"({minutes_until} minutes)")
             
-            # Check every 30 seconds
             time.sleep(30)
             
         except KeyboardInterrupt:
@@ -210,17 +209,16 @@ def test_daily_fix():
     return success
 
 def show_status():
-    """Show current status and next run time"""
+    """Show current status and next run times"""
     current_time = get_arizona_time()
     next_run = calculate_next_run(current_time)
     
     print("\n📊 DUAL SCHEDULER STATUS")
-    print("=" * 40)
+    print("=" * 50)
     print(f"Current time: {current_time.strftime('%Y-%m-%d %I:%M:%S %p')} AZ")
     print(f"Next hourly run: {next_run.strftime('%Y-%m-%d %I:%M:%S %p')} AZ")
-    print(f"Schedule: Every hour at :{TARGET_MINUTE:02d}")
-    print(f"Daily fix: Every day at 7:00 AM")
-    print("=" * 40)
+    print(f"Daily fix: Every day at 7:00 AM AZ")
+    print("=" * 50)
 
 if __name__ == "__main__":
     import sys
@@ -234,14 +232,14 @@ if __name__ == "__main__":
         elif command == "--status":
             show_status()
         elif command == "--help":
-            print("\n📖 SCHEDULER COMMANDS")
-            print("=" * 40)
+            print("\n📖 DUAL SCHEDULER COMMANDS")
+            print("=" * 50)
             print("python scheduler.py            - Start dual scheduler")
             print("python scheduler.py --test     - Run hourly automation immediately")
             print("python scheduler.py --test-fix - Run daily fix immediately")
             print("python scheduler.py --status   - Show current status")
             print("python scheduler.py --help     - Show this help")
-            print("=" * 40)
+            print("=" * 50)
         else:
             print(f"Unknown command: {command}")
             print("Use --help to see available commands")
