@@ -21,6 +21,8 @@ services:
     volumes:
       - ./Financial Reports:/app/Financial Reports
       - ./RO Reports:/app/RO Reports
+      - ./Financial Reports Fix:/app/Financial Reports Fix
+      - ./RO Reports Fix:/app/RO Reports Fix
       - ./logs:/app/logs
     networks:
       - tekmetric-hourly-network
