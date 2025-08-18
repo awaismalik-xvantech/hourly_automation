@@ -26,18 +26,28 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     libu2f-udev \
     libvulkan1 \
-    fonts-unifont \
-    fonts-noto \
-    fonts-noto-cjk \
+    chromium \
+    fonts-noto-color-emoji \
+    fonts-noto-core \
+    fonts-noto-mono \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
+
+# Set up Chrome environment
+ENV CHROME_PATH=/usr/bin/chromium \
+    CHROMIUM_PATH=/usr/bin/chromium
 
 # Copy and install Python requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install only Chromium browser
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-RUN playwright install --with-deps chromium
+# Configure Playwright to use system Chromium
+ENV PLAYWRIGHT_BROWSERS_PATH=0 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Set up Xvfb for headless browser
+ENV DISPLAY=:99
 
 COPY . .
 
@@ -46,4 +56,5 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-CMD ["python", "scheduler.py"]
+# Start Xvfb and run the application
+CMD Xvfb :99 -screen 0 1024x768x16 & python scheduler.py
