@@ -1,23 +1,40 @@
 FROM python:3.10-slim
 
-WORKDIR /app
+# Set timezone to Arizona
+ENV TZ=America/Phoenix
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# Install system dependencies for Playwright and SQL Server
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
+    ca-certificates \
+    unixodbc-dev \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better caching
 COPY requirements.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright browsers
 RUN playwright install chromium
 RUN playwright install-deps chromium
 
+# Copy application files
 COPY . .
 
-ENV TZ=America/Phoenix
-ENV PYTHONUNBUFFERED=1
+# Create directories for reports (including fix directories)
+RUN mkdir -p "Financial Reports" "RO Reports" "Financial Reports Fix" "RO Reports Fix" logs
 
-EXPOSE 8000
+# Set permissions
+RUN chmod +x /app
 
+# Default command runs the scheduler
 CMD ["python", "scheduler.py"]
