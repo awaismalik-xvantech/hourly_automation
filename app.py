@@ -403,8 +403,16 @@ def main():
         browser = None
         try:
             browser = p.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-dev-shm-usage']
+                headless=True,  # Force headless
+                args=[
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-web-security',
+                    '--disable-extensions',
+                    '--no-first-run',
+                    '--disable-default-apps'
+                ]
             )
             
             context = browser.new_context(
