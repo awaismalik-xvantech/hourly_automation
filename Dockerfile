@@ -12,12 +12,11 @@ RUN apt-get update && apt-get install -y \
     unixodbc-dev \
     gcc \
     g++ \
-    # Playwright browser dependencies
+    # Playwright browser dependencies (fixed package names)
     libglib2.0-0 \
     libgobject-2.0-0 \
     libnspr4 \
     libnss3 \
-    libnssutil3 \
     libdbus-1-3 \
     libgio-2.0-0 \
     libatk1.0-0 \
