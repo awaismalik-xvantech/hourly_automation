@@ -23,7 +23,7 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers only (skip install-deps for ARM64 compatibility)
+# Install Playwright browsers only (NO install-deps to avoid ARM64 font issues)
 RUN playwright install chromium
 
 # Copy application files
@@ -35,5 +35,5 @@ RUN mkdir -p "Financial Reports" "RO Reports" logs
 # Set permissions
 RUN chmod +x /app
 
-# Default command runs the daily scheduler
+# Default command runs the hourly scheduler
 CMD ["python", "scheduler.py"]
