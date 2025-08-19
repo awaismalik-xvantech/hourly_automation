@@ -23,9 +23,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
+# Install Playwright browsers only (skip install-deps for ARM64 compatibility)
 RUN playwright install chromium
-RUN playwright install-deps chromium
 
 # Copy application files
 COPY . .
