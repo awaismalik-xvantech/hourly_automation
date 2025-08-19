@@ -8,28 +8,12 @@ services:
     container_name: tekmetric-automation
     restart: unless-stopped
     
-    # Environment variables - add your actual values
+    # Use .env file automatically
+    env_file:
+      - .env
+    
+    # Additional environment variables for Docker
     environment:
-      # Tekmetric credentials
-      - TEKMETRIC_EMAIL=${TEKMETRIC_EMAIL}
-      - TEKMETRIC_PASSWORD=${TEKMETRIC_PASSWORD}
-      
-      # SQL Server configuration
-      - SQL_SERVER=${SQL_SERVER:-gembadb.database.windows.net}
-      - SQL_DATABASE=${SQL_DATABASE:-gemba}
-      - SQL_USERNAME=${SQL_USERNAME:-gembauser}
-      - SQL_PASSWORD=${SQL_PASSWORD}
-      - SQL_PORT=${SQL_PORT:-1433}
-      
-      # Microsoft Graph API for emails
-      - TENANT_ID=${TENANT_ID:-55e7e814-58a0-4b3e-9915-66cd8d4adbd4}
-      - CLIENT_ID=${CLIENT_ID:-ed7a0d5e-846f-4316-96cd-67fdfb915065}
-      - CLIENT_SECRET=${CLIENT_SECRET}
-      - SENDER_EMAIL=${SENDER_EMAIL:-awais@xvantech.com}
-      - AUTHORITY=${AUTHORITY:-https://login.microsoftonline.com/xvantech.com}
-      
-      # Playwright configuration for headless operation
-      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - DISPLAY=:99
       - PYTHONUNBUFFERED=1
     
