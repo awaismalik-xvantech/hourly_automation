@@ -53,14 +53,14 @@ COPY . .
 RUN mkdir -p "Financial Reports" "RO Reports" logs
 
 # Set environment variables for Playwright
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV DISPLAY=:99
 ENV PYTHONUNBUFFERED=1
 
 # Create non-root user for security
 RUN useradd -m -u 1000 automation && \
-    chown -R automation:automation /app && \
-    chown -R automation:automation /ms-playwright
+    chown -R automation:automation /app
+
+# Switch to automation user
 USER automation
 
 # Expose port if needed (optional)
