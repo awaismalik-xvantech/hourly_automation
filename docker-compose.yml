@@ -1,51 +1,80 @@
 version: '3.8'
 
 services:
-  tekmetric-hourly-automation:
+  tekmetric-automation:
     build: 
       context: .
       dockerfile: Dockerfile
-    container_name: gemba-tekmetric-hourly-automation
+    container_name: tekmetric-automation
     restart: unless-stopped
+    
+    # Environment variables - add your actual values
     environment:
-      - TZ=America/Phoenix
-      - PYTHONUNBUFFERED=1
-      # SECURITY FIX: Remove default values - these MUST be set in .env file
+      # Tekmetric credentials
       - TEKMETRIC_EMAIL=${TEKMETRIC_EMAIL}
       - TEKMETRIC_PASSWORD=${TEKMETRIC_PASSWORD}
+      
+      # SQL Server configuration
       - SQL_SERVER=${SQL_SERVER:-gembadb.database.windows.net}
       - SQL_DATABASE=${SQL_DATABASE:-gemba}
       - SQL_USERNAME=${SQL_USERNAME:-gembauser}
       - SQL_PASSWORD=${SQL_PASSWORD}
       - SQL_PORT=${SQL_PORT:-1433}
+      
+      # Microsoft Graph API for emails
+      - TENANT_ID=${TENANT_ID:-55e7e814-58a0-4b3e-9915-66cd8d4adbd4}
+      - CLIENT_ID=${CLIENT_ID:-ed7a0d5e-846f-4316-96cd-67fdfb915065}
+      - CLIENT_SECRET=${CLIENT_SECRET}
+      - SENDER_EMAIL=${SENDER_EMAIL:-awais@xvantech.com}
+      - AUTHORITY=${AUTHORITY:-https://login.microsoftonline.com/xvantech.com}
+      
+      # Playwright configuration for headless operation
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - DISPLAY=:99
+      - PYTHONUNBUFFERED=1
+    
+    # Volume mounts for persistent data
     volumes:
       - ./Financial Reports:/app/Financial Reports
       - ./RO Reports:/app/RO Reports
       - ./logs:/app/logs
-    networks:
-      - tekmetric-hourly-network
-    # Enhanced health check
-    healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/app.py') else 1)"]
-      interval: 300s
-      timeout: 30s
-      retries: 3
-      start_period: 60s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
-    # Resource limits for Azure server
+      - playwright-cache:/ms-playwright
+    
+    # Resource limits for Azure
     deploy:
       resources:
         limits:
           memory: 2G
           cpus: '1.0'
         reservations:
-          memory: 512M
+          memory: 1G
           cpus: '0.5'
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import pymssql; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Network configuration
+    networks:
+      - automation-network
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
+# Named volumes
+volumes:
+  playwright-cache:
+    driver: local
+
+# Networks
 networks:
-  tekmetric-hourly-network:
+  automation-network:
     driver: bridge
