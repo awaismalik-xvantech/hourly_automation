@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     unixodbc-dev \
     g++ \
-    # Required for Playwright browsers
+    # Required for Playwright browsers (manually install instead of playwright install-deps)
     libnss3 \
     libnspr4 \
     libatk-bridge2.0-0 \
@@ -27,6 +27,13 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libatspi2.0-0 \
     libgtk-3-0 \
+    # Font packages (replacements for missing ARM64 fonts)
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    fonts-dejavu-core \
+    fontconfig \
+    # Virtual display for headless mode
+    xvfb \
     # Cleanup
     && rm -rf /var/lib/apt/lists/*
 
@@ -36,9 +43,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright and browsers
+# Install Playwright browsers ONLY (skip install-deps to avoid font conflicts)
 RUN playwright install chromium
-RUN playwright install-deps chromium
 
 # Copy application code
 COPY . .
