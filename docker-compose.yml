@@ -5,7 +5,7 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
-    container_name: tekmetric-automation
+    container_name: tekmetric-hourly-automation
     restart: unless-stopped
     
     # Use .env file automatically
@@ -14,15 +14,15 @@ services:
     
     # Additional environment variables for Docker
     environment:
-      - DISPLAY=:99
+      - TZ=America/Phoenix
       - PYTHONUNBUFFERED=1
+      - DISPLAY=:99
     
-    # Volume mounts for persistent data
+    # Volume mounts for persistent data (like your daily version)
     volumes:
       - ./Financial Reports:/app/Financial Reports
       - ./RO Reports:/app/RO Reports
       - ./logs:/app/logs
-      - playwright-cache:/ms-playwright
     
     # Resource limits for Azure
     deploy:
@@ -31,16 +31,16 @@ services:
           memory: 2G
           cpus: '1.0'
         reservations:
-          memory: 1G
+          memory: 512M
           cpus: '0.5'
     
     # Health check
     healthcheck:
-      test: ["CMD", "python", "-c", "import pymssql; print('OK')"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/app.py') else 1)"]
+      interval: 300s
+      timeout: 30s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     
     # Network configuration
     networks:
@@ -50,13 +50,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
-        max-file: "3"
-
-# Named volumes
-volumes:
-  playwright-cache:
-    driver: local
+        max-size: "50m"
+        max-file: "5"
 
 # Networks
 networks:
